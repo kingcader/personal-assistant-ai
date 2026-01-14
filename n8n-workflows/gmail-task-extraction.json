@@ -1,0 +1,357 @@
+{
+  "name": "Gmail → Supabase Task Extraction",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute",
+              "minute": 5
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [
+            "AI/Work"
+          ]
+        },
+        "format": "resolved"
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "emails",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "gmail_message_id",
+            "value": "={{ $json.id }}"
+          }
+        ]
+      },
+      "id": "check-email-exists",
+      "name": "Check if Email Already Processed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "YOUR_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "largerEqual",
+              "value2": "1"
+            }
+          ]
+        }
+      },
+      "id": "if-email-exists",
+      "name": "If Email Exists → Stop",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract sender email and name from Gmail 'from' field\nconst from = $input.item.json.from; // \"John Doe <john@company.com>\"\nconst emailMatch = from.match(/<(.+?)>/);\nconst email = emailMatch ? emailMatch[1] : from;\nconst name = from.replace(/<.+?>/, '').trim();\n\nreturn {\n  sender_email: email,\n  sender_name: name || null\n};"
+      },
+      "id": "extract-sender",
+      "name": "Extract Sender Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "table": "people",
+        "data": {
+          "email": "={{ $('Extract Sender Info').json.sender_email }}",
+          "name": "={{ $('Extract Sender Info').json.sender_name }}"
+        },
+        "onConflict": "email"
+      },
+      "id": "upsert-sender",
+      "name": "Upsert Sender into People Table",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "YOUR_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "emails",
+        "data": {
+          "gmail_message_id": "={{ $('Gmail Trigger').json.id }}",
+          "thread_id": "={{ $('Gmail Trigger').json.threadId }}",
+          "sender_id": "={{ $('Upsert Sender into People Table').json[0].id }}",
+          "subject": "={{ $('Gmail Trigger').json.subject }}",
+          "body": "={{ $('Gmail Trigger').json.plainText }}",
+          "received_at": "={{ $('Gmail Trigger').json.internalDate }}",
+          "to_emails": "={{ $('Gmail Trigger').json.to?.split(',') || [] }}",
+          "cc_emails": "={{ $('Gmail Trigger').json.cc?.split(',') || [] }}",
+          "has_attachments": "={{ ($('Gmail Trigger').json.attachments?.length || 0) > 0 }}"
+        }
+      },
+      "id": "insert-email",
+      "name": "Insert Email into Emails Table",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "YOUR_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo-preview",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a task extraction AI. Analyze email content and extract actionable tasks.\n\nSTRICT OUTPUT FORMAT (valid JSON array):\n[\n  {\n    \"title\": \"string (required, max 200 chars, concise action)\",\n    \"why\": \"string (required, 1 sentence explaining task origin from email)\",\n    \"suggested_due_date\": \"YYYY-MM-DD or null (NEVER hallucinate)\",\n    \"suggested_owner_email\": \"string (required, valid email from sender/recipients)\",\n    \"priority\": \"low | med | high\"\n  }\n]\n\nVALIDATION RULES:\n1. title: Must be actionable verb phrase (e.g., \"Review Q4 budget proposal\")\n2. why: Must quote/reference specific email content (e.g., \"Email requests review by Friday\")\n3. suggested_due_date:\n   - ONLY extract if explicitly mentioned in email (\"by Friday\", \"due March 15\")\n   - Convert relative dates to YYYY-MM-DD format\n   - Use NULL if no deadline mentioned (DO NOT GUESS)\n4. suggested_owner_email:\n   - MUST be sender OR a recipient from the email\n   - Default to sender if ambiguous\n   - Use email address, not display name\n5. priority:\n   - \"high\": Urgent language, tight deadline, executive request\n   - \"med\": Normal work tasks, standard deadlines\n   - \"low\": FYI tasks, no deadline, optional\n\nDO NOT CREATE TASKS FOR:\n- Automated notifications (calendar invites, system alerts)\n- Newsletters, marketing emails, promotional content\n- Email confirmations (receipts, booking confirmations)\n- \"FYI\" emails with no action required\n- Social media notifications\n- Out-of-office auto-replies"
+          },
+          {
+            "role": "user",
+            "content": "Extract actionable tasks from this email:\n\nSubject: {{ $('Gmail Trigger').json.subject }}\nFrom: {{ $('Extract Sender Info').json.sender_name }} <{{ $('Extract Sender Info').json.sender_email }}>\nReceived: {{ $('Gmail Trigger').json.internalDate }}\nTo: {{ $('Gmail Trigger').json.to }}\n\nBody:\n{{ $('Gmail Trigger').json.plainText }}"
+          }
+        ],
+        "jsonOutput": true
+      },
+      "id": "call-llm",
+      "name": "Call LLM for Task Extraction",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1450, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      },
+      "notes": "You can also use Anthropic/Claude here instead of OpenAI"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate AI response and filter invalid suggestions\nconst response = $input.item.json.message?.content || $input.item.json.response;\nlet suggestions = [];\n\ntry {\n  suggestions = JSON.parse(response);\n} catch (e) {\n  console.error('Failed to parse AI response:', e);\n  return { suggestions: [] };\n}\n\nif (!Array.isArray(suggestions)) {\n  return { suggestions: [] };\n}\n\n// Validation function\nfunction isValid(s) {\n  return (\n    s.title && s.title.length > 0 && s.title.length <= 200 &&\n    s.why && s.why.length > 0 &&\n    (s.suggested_due_date === null || /^\\d{4}-\\d{2}-\\d{2}$/.test(s.suggested_due_date)) &&\n    /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s.suggested_owner_email) &&\n    ['low', 'med', 'high'].includes(s.priority)\n  );\n}\n\nconst valid = suggestions.filter(isValid);\n\nreturn { suggestions: valid };"
+      },
+      "id": "validate-ai-response",
+      "name": "Validate AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.suggestions.length }}",
+              "operation": "equal",
+              "value2": "0"
+            }
+          ]
+        }
+      },
+      "id": "if-no-suggestions",
+      "name": "If No Valid Suggestions → Stop",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1850, 400]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop-suggestions",
+      "name": "Loop Over Suggestions",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [2050, 500]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "suggestions",
+        "data": {
+          "email_id": "={{ $('Insert Email into Emails Table').json[0].id }}",
+          "title": "={{ $json.suggestions[$('Loop Over Suggestions').item.index].title }}",
+          "why": "={{ $json.suggestions[$('Loop Over Suggestions').item.index].why }}",
+          "suggested_due_date": "={{ $json.suggestions[$('Loop Over Suggestions').item.index].suggested_due_date }}",
+          "suggested_owner_email": "={{ $json.suggestions[$('Loop Over Suggestions').item.index].suggested_owner_email }}",
+          "priority": "={{ $json.suggestions[$('Loop Over Suggestions').item.index].priority }}",
+          "status": "pending",
+          "ai_model_used": "gpt-4-turbo-preview"
+        }
+      },
+      "id": "insert-suggestion",
+      "name": "Insert Suggestion into DB",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2250, 500],
+      "credentials": {
+        "supabaseApi": {
+          "id": "YOUR_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check if Email Already Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Email Already Processed": {
+      "main": [
+        [
+          {
+            "node": "If Email Exists → Stop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Email Exists → Stop": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Extract Sender Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Sender Info": {
+      "main": [
+        [
+          {
+            "node": "Upsert Sender into People Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Sender into People Table": {
+      "main": [
+        [
+          {
+            "node": "Insert Email into Emails Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Email into Emails Table": {
+      "main": [
+        [
+          {
+            "node": "Call LLM for Task Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call LLM for Task Extraction": {
+      "main": [
+        [
+          {
+            "node": "Validate AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate AI Response": {
+      "main": [
+        [
+          {
+            "node": "If No Valid Suggestions → Stop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If No Valid Suggestions → Stop": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Loop Over Suggestions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Suggestions": {
+      "main": [
+        [
+          {
+            "node": "Insert Suggestion into DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Suggestion into DB": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Suggestions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "tags": []
+}
