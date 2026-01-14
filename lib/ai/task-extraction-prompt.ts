@@ -53,6 +53,15 @@ TASK INFERENCE RULES:
 - If email requests action from "team" or "everyone" and recipient is included, create task
 - IGNORE tasks explicitly assigned to other people (e.g., "Sarah, you handle X")
 
+SELF-SENT EMAIL DETECTION:
+If the email is FROM Kincaid TO Kincaid (self-sent), treat first-person statements as tasks to track:
+- "I am going to X" → Create task: "X"
+- "I need to X" → Create task: "X"
+- "I will X" → Create task: "X"
+- "Tomorrow I will X" → Create task: "X" with due date = tomorrow
+- Lists of items → Each item becomes a task
+This is Kincaid noting tasks for himself to track in the system.
+
 DAILY REPORT DETECTION (MANDATORY PRE-CHECK):
 Before extracting ANY tasks, you MUST check if the subject contains "Daily Report":
 
@@ -198,7 +207,37 @@ Output:
     "suggested_owner_email": "kincaid@company.com",
     "priority": "high"
   }
-]}`;
+]}
+
+Email FROM: kincaidgarrett@gmail.com
+TO: kincaidgarrett@gmail.com
+Subject: "Black Coast"
+"Tomorrow I am going to check the water meters and I am going to cut the trees and I am going to clean the sales office."
+Output:
+{"tasks": [
+  {
+    "title": "Check the water meters",
+    "why": "Self-sent email listing tasks to complete tomorrow",
+    "suggested_due_date": "2026-01-15",
+    "suggested_owner_email": "kincaidgarrett@gmail.com",
+    "priority": "med"
+  },
+  {
+    "title": "Cut the trees",
+    "why": "Self-sent email listing tasks to complete tomorrow",
+    "suggested_due_date": "2026-01-15",
+    "suggested_owner_email": "kincaidgarrett@gmail.com",
+    "priority": "med"
+  },
+  {
+    "title": "Clean the sales office",
+    "why": "Self-sent email listing tasks to complete tomorrow",
+    "suggested_due_date": "2026-01-15",
+    "suggested_owner_email": "kincaidgarrett@gmail.com",
+    "priority": "med"
+  }
+]}
+(IMPORTANT: Self-sent emails from Kincaid to Kincaid should extract ALL mentioned tasks)`;
 
 /**
  * Task Suggestion Interface
