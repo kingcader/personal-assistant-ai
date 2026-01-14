@@ -62,35 +62,75 @@ If the email is FROM Kincaid TO Kincaid (self-sent), treat first-person statemen
 - Lists of items → Each item becomes a task
 This is Kincaid noting tasks for himself to track in the system.
 
-DAILY REPORT DETECTION (MANDATORY PRE-CHECK):
-Before extracting ANY tasks, you MUST check if the subject contains "Daily Report":
+DAILY REPORT DETECTION (OCHO REPORTS):
+These are automated daily reports from Ocho Reports. Subject format: "Daily Report | [Name] | [Date]"
 
 STEP 1: Does subject contain "Daily Report"?
   - NO → Process normally (not a daily report)
   - YES → Go to Step 2
 
-STEP 2: Does subject contain "Kincaid"? (e.g., "Daily Report | Kincaid Garrett")
-  - YES → This is KINCAID'S daily report. Extract ALL tasks listed.
+STEP 2: Does subject contain "Kincaid"? (e.g., "Daily Report | Kincaid Garrett | 2026-01-14")
+  - YES → This is KINCAID'S daily report
+  - The report contains tasks Kincaid plans to do
+  - If the report has a "Tomorrow" or "Next Day" section, extract ONLY those tasks
+  - If no "Tomorrow" section exists, extract ALL listed tasks/priorities
+  - Each bullet point or line item is a separate task
   - NO → Go to Step 3
 
 STEP 3: Subject has someone else's name (e.g., "Daily Report | Tanner", "Daily Report | Trace")
   - This is SOMEONE ELSE'S daily report, NOT Kincaid's
-  - Search the email BODY for the word "Kincaid" (case-insensitive)
-  - If "Kincaid" appears in body → Extract ONLY tasks where Kincaid is asked to do something
+  - These are tasks the OTHER person plans to do - DO NOT extract them for Kincaid
+  - EXCEPTION: Search the body for "Kincaid" (case-insensitive)
+  - If "Kincaid" appears → Extract ONLY the specific task where Kincaid is asked to do something
+  - Common patterns to look for:
+    - "Kincaid needs to..." → Extract as task
+    - "Have Kincaid..." → Extract as task
+    - "Ask Kincaid to..." → Extract as task
+    - "Kincaid will..." → Extract as task
+    - "Touch base with Kincaid about..." → Extract: "Respond to [reporter] about [topic]"
   - If "Kincaid" does NOT appear in body → Return {"tasks": []}
 
-EXAMPLES OF STEP 3:
-Subject: "Daily Report | Tanner"
-Body: "Today: Pay vendors, Update QuickBooks, Follow up with client"
+EXAMPLES - Kincaid's Daily Report:
+Subject: "Daily Report | Kincaid Garrett | 2026-01-14"
+Body: "DAILY OPERATIONS REPORT
+Reporter: Kincaid Garrett
+BASIC REPORT
+Here's what I have for today:
+- Get the contract from Jason and review it.
+- Send updated Subscription to Stephanie.
+- Make sure Escrow can start receiving the deposits."
+Output:
+{"tasks": [
+  {"title": "Get the contract from Jason and review it", "why": "Listed in Kincaid's daily report", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"},
+  {"title": "Send updated Subscription to Stephanie", "why": "Listed in Kincaid's daily report", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"},
+  {"title": "Make sure Escrow can start receiving the deposits", "why": "Listed in Kincaid's daily report", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"}
+]}
+
+EXAMPLES - Other Person's Daily Report (NO Kincaid mention):
+Subject: "Daily Report | Tanner | 2026-01-14"
+Body: "DAILY OPERATIONS REPORT
+Reporter: Tanner
+BASIC REPORT
+Here are my priorities for the day:
+Pay ULB
+Update the accounting app
+Touch base with Seth about wall costs."
 → "Kincaid" not in body → Return {"tasks": []}
+(These are Tanner's tasks, not Kincaid's)
 
-Subject: "Daily Report | Trace"
-Body: "Today: Check systems, Have Kincaid review the contract, Call supplier"
-→ "Kincaid" IS in body → Extract ONLY: {"tasks": [{"title": "Review the contract", ...}]}
-
-Subject: "Daily Report | Tanner"
-Body: "Today: Kincaid needs to send the docs to legal, I'll handle invoices"
-→ "Kincaid" IS in body → Extract ONLY: {"tasks": [{"title": "Send the docs to legal", ...}]}
+EXAMPLES - Other Person's Daily Report (WITH Kincaid mention):
+Subject: "Daily Report | Tanner | 2026-01-14"
+Body: "DAILY OPERATIONS REPORT
+Reporter: Tanner
+BASIC REPORT
+Here are my priorities for the day:
+Pay ULB
+Have Kincaid review the new contract before sending to legal
+Update the accounting app"
+→ "Kincaid" IS in body → Extract ONLY:
+{"tasks": [
+  {"title": "Review the new contract before sending to legal", "why": "Tanner's daily report requests Kincaid to review contract", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"}
+]}
 
 DO NOT CREATE TASKS FOR:
 - Actions explicitly assigned to OTHER people in the email
@@ -131,65 +171,6 @@ Output:
     "priority": "high"
   }
 ]}
-
-Email: "Daily Report | Kincaid Garrett"
-TO: kincaid@company.com
-"Today's priorities:
-- Get contract from Jason and review it
-- Send updated docs to Stephanie
-- Follow up with legal team"
-Output:
-{"tasks": [
-  {
-    "title": "Get contract from Jason and review it",
-    "why": "Listed as priority in Kincaid's daily report",
-    "suggested_due_date": null,
-    "suggested_owner_email": "kincaid@company.com",
-    "priority": "med"
-  },
-  {
-    "title": "Send updated docs to Stephanie",
-    "why": "Listed as priority in Kincaid's daily report",
-    "suggested_due_date": null,
-    "suggested_owner_email": "kincaid@company.com",
-    "priority": "med"
-  },
-  {
-    "title": "Follow up with legal team",
-    "why": "Listed as priority in Kincaid's daily report",
-    "suggested_due_date": null,
-    "suggested_owner_email": "kincaid@company.com",
-    "priority": "med"
-  }
-]}
-
-Email: "Daily Report | Tanner"
-TO: kincaid@company.com
-"Today's priorities:
-- Pay the vendors
-- Update accounting system
-- Have Kincaid review the contract and send it to legal
-- Follow up with client about invoice"
-Output:
-{"tasks": [
-  {
-    "title": "Review the contract and send it to legal",
-    "why": "Tanner's daily report mentions Kincaid needs to review contract and send to legal",
-    "suggested_due_date": null,
-    "suggested_owner_email": "kincaidgarrett@gmail.com",
-    "priority": "med"
-  }
-]}
-(Note: "Pay vendors", "Update accounting", "Follow up with client" are NOT extracted - those are Tanner's tasks, and "Kincaid" only appears for the contract task)
-
-Email: "Daily Report | Trace Garrett"
-TO: kincaid@company.com
-"Today's priorities:
-- Inspect systems on site
-- Get broom and hose for guards
-- Follow up with HHR"
-Output: {"tasks": []}
-(CRITICAL: "Kincaid" does NOT appear anywhere in the body. This is Trace's report with Trace's tasks. Return empty tasks array.)
 
 Email TO: kincaid@company.com
 "Just FYI - the office will be closed next Monday for maintenance."
