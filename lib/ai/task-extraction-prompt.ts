@@ -13,16 +13,23 @@ ABSOLUTE RULE - NO EXCEPTIONS:
 - If a task is for someone else (Seth, Stephanie, Tanner, etc.), DO NOT include it
 - Only extract tasks that Kincaid personally needs to act on
 
-STRICT OUTPUT FORMAT (valid JSON array):
-[
-  {
-    "title": "string (required, max 200 chars, concise action)",
-    "why": "string (required, 1 sentence explaining why recipient needs to do this)",
-    "suggested_due_date": "YYYY-MM-DD or null (NEVER hallucinate)",
-    "suggested_owner_email": "string (ALWAYS the recipient's email from TO field)",
-    "priority": "low | med | high"
-  }
-]
+STRICT OUTPUT FORMAT (JSON object with tasks array):
+{
+  "tasks": [
+    {
+      "title": "string (required, max 200 chars, concise action)",
+      "why": "string (required, 1 sentence explaining why recipient needs to do this)",
+      "suggested_due_date": "YYYY-MM-DD or null (NEVER hallucinate)",
+      "suggested_owner_email": "string (ALWAYS the recipient's email from TO field)",
+      "priority": "low | med | high"
+    }
+  ]
+}
+
+IMPORTANT: Always return a JSON object with a "tasks" array, even if there's only one task or no tasks.
+- Multiple tasks: {"tasks": [{...}, {...}, {...}]}
+- Single task: {"tasks": [{...}]}
+- No tasks: {"tasks": []}
 
 VALIDATION RULES:
 1. title: Must be actionable verb phrase from recipient's perspective (e.g., "Review Q4 budget proposal", "Follow up with Jason")
@@ -61,20 +68,20 @@ STEP 3: Subject has someone else's name (e.g., "Daily Report | Tanner", "Daily R
   - This is SOMEONE ELSE'S daily report, NOT Kincaid's
   - Search the email BODY for the word "Kincaid" (case-insensitive)
   - If "Kincaid" appears in body → Extract ONLY tasks where Kincaid is asked to do something
-  - If "Kincaid" does NOT appear in body → Return empty array []
+  - If "Kincaid" does NOT appear in body → Return {"tasks": []}
 
 EXAMPLES OF STEP 3:
 Subject: "Daily Report | Tanner"
 Body: "Today: Pay vendors, Update QuickBooks, Follow up with client"
-→ "Kincaid" not in body → Return []
+→ "Kincaid" not in body → Return {"tasks": []}
 
 Subject: "Daily Report | Trace"
 Body: "Today: Check systems, Have Kincaid review the contract, Call supplier"
-→ "Kincaid" IS in body → Extract ONLY: "Review the contract"
+→ "Kincaid" IS in body → Extract ONLY: {"tasks": [{"title": "Review the contract", ...}]}
 
 Subject: "Daily Report | Tanner"
 Body: "Today: Kincaid needs to send the docs to legal, I'll handle invoices"
-→ "Kincaid" IS in body → Extract ONLY: "Send the docs to legal"
+→ "Kincaid" IS in body → Extract ONLY: {"tasks": [{"title": "Send the docs to legal", ...}]}
 
 DO NOT CREATE TASKS FOR:
 - Actions explicitly assigned to OTHER people in the email
@@ -91,7 +98,7 @@ Email TO: kincaid@company.com
 FROM: manager@company.com
 "Hey team, please review the Q4 budget by end of week. Sarah, can you handle the marketing section?"
 Output:
-[
+{"tasks": [
   {
     "title": "Review Q4 budget proposal",
     "why": "Email requests team review of Q4 budget by end of week",
@@ -99,14 +106,14 @@ Output:
     "suggested_owner_email": "kincaid@company.com",
     "priority": "high"
   }
-]
+]}
 (Note: Don't create task for Sarah's marketing section - that's for Sarah, not the recipient)
 
 Email TO: kincaid@company.com
 FROM: client@company.com
 "Can you send me the updated contract by tomorrow afternoon?"
 Output:
-[
+{"tasks": [
   {
     "title": "Send updated contract to client",
     "why": "Client requests updated contract by tomorrow afternoon",
@@ -114,7 +121,7 @@ Output:
     "suggested_owner_email": "kincaid@company.com",
     "priority": "high"
   }
-]
+]}
 
 Email: "Daily Report | Kincaid Garrett"
 TO: kincaid@company.com
@@ -123,7 +130,7 @@ TO: kincaid@company.com
 - Send updated docs to Stephanie
 - Follow up with legal team"
 Output:
-[
+{"tasks": [
   {
     "title": "Get contract from Jason and review it",
     "why": "Listed as priority in Kincaid's daily report",
@@ -145,7 +152,7 @@ Output:
     "suggested_owner_email": "kincaid@company.com",
     "priority": "med"
   }
-]
+]}
 
 Email: "Daily Report | Tanner"
 TO: kincaid@company.com
@@ -155,7 +162,7 @@ TO: kincaid@company.com
 - Have Kincaid review the contract and send it to legal
 - Follow up with client about invoice"
 Output:
-[
+{"tasks": [
   {
     "title": "Review the contract and send it to legal",
     "why": "Tanner's daily report mentions Kincaid needs to review contract and send to legal",
@@ -163,7 +170,7 @@ Output:
     "suggested_owner_email": "kincaidgarrett@gmail.com",
     "priority": "med"
   }
-]
+]}
 (Note: "Pay vendors", "Update accounting", "Follow up with client" are NOT extracted - those are Tanner's tasks, and "Kincaid" only appears for the contract task)
 
 Email: "Daily Report | Trace Garrett"
@@ -172,18 +179,18 @@ TO: kincaid@company.com
 - Inspect systems on site
 - Get broom and hose for guards
 - Follow up with HHR"
-Output: []
-(CRITICAL: "Kincaid" does NOT appear anywhere in the body. This is Trace's report with Trace's tasks. Return empty array.)
+Output: {"tasks": []}
+(CRITICAL: "Kincaid" does NOT appear anywhere in the body. This is Trace's report with Trace's tasks. Return empty tasks array.)
 
 Email TO: kincaid@company.com
 "Just FYI - the office will be closed next Monday for maintenance."
-Output: []
+Output: {"tasks": []}
 (No action required from recipient)
 
 Email TO: kincaid@company.com
 "The server is showing errors. Can someone check the logs?"
 Output:
-[
+{"tasks": [
   {
     "title": "Check server logs for errors",
     "why": "Email reports server errors and requests investigation",
@@ -191,7 +198,7 @@ Output:
     "suggested_owner_email": "kincaid@company.com",
     "priority": "high"
   }
-]`;
+]}`;
 
 /**
  * Task Suggestion Interface
