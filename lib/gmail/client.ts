@@ -147,3 +147,100 @@ export function parseEmailAddress(emailString: string): {
     name: null,
   };
 }
+
+/**
+ * Fetch all messages in specific threads (including sent emails)
+ * This is used to get the full conversation for waiting-on detection
+ */
+export async function fetchMessagesInThreads(
+  threadIds: string[]
+): Promise<GmailEmail[]> {
+  if (threadIds.length === 0) return [];
+
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+  });
+
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+  const emails: GmailEmail[] = [];
+  const processedMessageIds = new Set<string>();
+
+  // Fetch each thread and get all messages in it
+  for (const threadId of threadIds) {
+    try {
+      const threadResponse = await gmail.users.threads.get({
+        userId: 'me',
+        id: threadId,
+        format: 'full',
+      });
+
+      const messages = threadResponse.data.messages || [];
+
+      for (const message of messages) {
+        if (!message.id || processedMessageIds.has(message.id)) continue;
+        processedMessageIds.add(message.id);
+
+        const headers = message.payload?.headers || [];
+        const getHeader = (name: string) =>
+          headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
+
+        // Extract body
+        let body = '';
+        if (message.payload?.parts) {
+          // Multipart message - look for text/plain
+          const textPart = findTextPart(message.payload.parts);
+          if (textPart?.body?.data) {
+            body = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
+          }
+        } else if (message.payload?.body?.data) {
+          // Simple message
+          body = Buffer.from(message.payload.body.data, 'base64').toString('utf-8');
+        }
+
+        // Parse recipients
+        const toHeader = getHeader('To');
+        const ccHeader = getHeader('Cc');
+
+        emails.push({
+          id: message.id,
+          threadId: message.threadId || threadId,
+          subject: getHeader('Subject'),
+          from: getHeader('From'),
+          to: toHeader ? toHeader.split(',').map((e) => e.trim()) : [],
+          cc: ccHeader ? ccHeader.split(',').map((e) => e.trim()) : [],
+          body,
+          receivedAt: new Date(parseInt(message.internalDate || '0')),
+          hasAttachments: (message.payload?.parts?.length || 0) > 1,
+        });
+      }
+    } catch (error) {
+      console.error(`Error fetching thread ${threadId}:`, error);
+      // Continue with other threads
+    }
+  }
+
+  return emails;
+}
+
+/**
+ * Recursively find text/plain part in multipart message
+ */
+function findTextPart(parts: any[]): any {
+  for (const part of parts) {
+    if (part.mimeType === 'text/plain') {
+      return part;
+    }
+    if (part.parts) {
+      const found = findTextPart(part.parts);
+      if (found) return found;
+    }
+  }
+  return null;
+}

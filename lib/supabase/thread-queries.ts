@@ -635,6 +635,31 @@ export async function linkEmailToThread(emailId: string, threadId: string): Prom
 }
 
 /**
+ * Get unique Gmail thread IDs from all emails in the database
+ * Used to fetch complete thread data (including sent emails)
+ */
+export async function getUniqueThreadIds(): Promise<string[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('emails')
+    .select('thread_id')
+    .not('thread_id', 'is', null);
+
+  if (error) {
+    throw new Error(`Failed to fetch thread IDs: ${error.message}`);
+  }
+
+  const uniqueIds = new Set<string>();
+  for (const email of data || []) {
+    if (email.thread_id) {
+      uniqueIds.add(email.thread_id);
+    }
+  }
+
+  return Array.from(uniqueIds);
+}
+
+/**
  * Get all emails grouped by thread_id (Gmail's thread ID)
  * Used for initial thread sync
  */

@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getEmailsGroupedByThread,
+  getUniqueThreadIds,
   upsertThread,
   updateWaitingOnStatus,
   linkEmailToThread,
@@ -27,6 +28,8 @@ import {
   MY_EMAIL,
   WAITING_THRESHOLD_DAYS,
 } from '@/lib/supabase/thread-queries';
+import { upsertEmail } from '@/lib/supabase/task-queries';
+import { fetchMessagesInThreads, parseEmailAddress } from '@/lib/gmail/client';
 import type { ThreadParticipant } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -51,11 +54,58 @@ export async function GET(request: NextRequest) {
       threads_updated: 0,
       waiting_on_detected: 0,
       emails_linked: 0,
+      sent_emails_added: 0,
       snoozed_reactivated: 0,
       errors: [] as string[],
     };
 
-    // 2. Get all emails grouped by thread_id
+    // 2. First, fetch sent emails for all Work threads
+    // This ensures we have complete thread data for waiting-on detection
+    try {
+      const threadIds = await getUniqueThreadIds();
+      console.log(`📨 Fetching complete thread data for ${threadIds.length} threads...`);
+
+      if (threadIds.length > 0) {
+        // Fetch all messages in these threads (including sent)
+        const allMessages = await fetchMessagesInThreads(threadIds);
+        console.log(`📬 Found ${allMessages.length} total messages in threads`);
+
+        // Store any new messages (idempotent via gmail_message_id)
+        for (const msg of allMessages) {
+          try {
+            const { isNew } = await upsertEmail({
+              gmail_message_id: msg.id,
+              thread_id: msg.threadId,
+              sender_email: parseEmailAddress(msg.from).email,
+              sender_name: parseEmailAddress(msg.from).name,
+              subject: msg.subject,
+              body: msg.body,
+              received_at: msg.receivedAt.toISOString(),
+              to_emails: msg.to.map((e) => parseEmailAddress(e).email),
+              cc_emails: msg.cc.map((e) => parseEmailAddress(e).email),
+              has_attachments: msg.hasAttachments,
+            });
+
+            if (isNew) {
+              results.sent_emails_added++;
+              console.log(`📤 Added sent email: ${msg.subject}`);
+            }
+          } catch (err) {
+            // Continue on error - might be duplicate or constraint issue
+            console.error(`Error storing message ${msg.id}:`, err);
+          }
+        }
+
+        if (results.sent_emails_added > 0) {
+          console.log(`✅ Added ${results.sent_emails_added} sent emails to database`);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error fetching sent emails:', error);
+      results.errors.push(`Sent email fetch: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
+    // 3. Get all emails grouped by thread_id (now includes sent emails)
     const emailsByThread = await getEmailsGroupedByThread();
     console.log(`📧 Found ${emailsByThread.size} unique threads to process`);
 
