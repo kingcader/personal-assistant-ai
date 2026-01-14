@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
         console.log(`✅ Inserted new email: ${email.subject}`);
 
         // 3b. Call AI for task extraction
-        const aiProvider = process.env.AI_PROVIDER || 'openai'; // 'openai' or 'anthropic'
+        const aiProvider = (process.env.AI_PROVIDER || 'openai') as 'openai' | 'anthropic';
         const suggestions = await extractTasksWithAI(email, aiProvider);
 
         console.log(`🤖 AI returned ${suggestions.length} suggestions:`, JSON.stringify(suggestions, null, 2));
