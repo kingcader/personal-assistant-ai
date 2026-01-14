@@ -35,7 +35,8 @@ export interface PendingSuggestion extends Suggestion {
  * Primary query for the Approvals page
  */
 export async function getPendingSuggestions(): Promise<PendingSuggestion[]> {
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
     .from('suggestions')
     .select(`
       *,
@@ -71,42 +72,40 @@ export async function approveSuggestion(
   }
 ): Promise<Task> {
   // 1. Fetch suggestion with email and owner
-  const { data: suggestion, error: suggestionError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: suggestionData, error: suggestionError } = await (supabase as any)
     .from('suggestions')
-    .select(`
-      *,
-      email:emails!inner(id)
-    `)
+    .select(`*, email:emails!inner(id)`)
     .eq('id', suggestionId)
-    .eq('status', 'pending') // Ensure still pending
+    .eq('status', 'pending')
     .single();
+
+  const suggestion = suggestionData as Suggestion & { email: { id: string } };
 
   if (suggestionError || !suggestion) {
     throw new Error('Suggestion not found or already processed');
   }
 
   // 2. Ensure owner exists in people table (upsert)
-  const { data: owner, error: ownerError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ownerData, error: ownerError } = await (supabase as any)
     .from('people')
     .upsert(
-      {
-        email: suggestion.suggested_owner_email,
-        // Name will be updated if already exists, or set to null if new
-      },
-      {
-        onConflict: 'email',
-        ignoreDuplicates: false,
-      }
+      { email: suggestion.suggested_owner_email },
+      { onConflict: 'email', ignoreDuplicates: false }
     )
     .select()
     .single();
+
+  const owner = ownerData as Person;
 
   if (ownerError || !owner) {
     throw new Error(`Failed to create/find owner: ${ownerError?.message}`);
   }
 
   // 3. Create task from suggestion (with optional edits)
-  const { data: task, error: taskError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: taskData, error: taskError } = await (supabase as any)
     .from('tasks')
     .insert({
       email_id: suggestion.email_id,
@@ -121,16 +120,19 @@ export async function approveSuggestion(
     .select()
     .single();
 
+  const task = taskData as Task;
+
   if (taskError || !task) {
     throw new Error(`Failed to create task: ${taskError?.message}`);
   }
 
   // 4. Update suggestion status to 'approved'
-  const { error: updateError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: updateError } = await (supabase as any)
     .from('suggestions')
     .update({ status: 'approved' })
     .eq('id', suggestionId)
-    .eq('status', 'pending'); // Optimistic lock
+    .eq('status', 'pending');
 
   if (updateError) {
     // Task was created but suggestion wasn't updated - log warning but return task
@@ -145,11 +147,12 @@ export async function approveSuggestion(
  * Marks suggestion as rejected (no task created)
  */
 export async function rejectSuggestion(suggestionId: string): Promise<void> {
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from('suggestions')
     .update({ status: 'rejected' })
     .eq('id', suggestionId)
-    .eq('status', 'pending'); // Only reject if still pending
+    .eq('status', 'pending');
 
   if (error) {
     throw new Error(`Failed to reject suggestion: ${error.message}`);
@@ -164,7 +167,8 @@ export async function getTasksByOwner(
   ownerEmail: string,
   includeCompleted: boolean = false
 ): Promise<Task[]> {
-  let query = supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase as any)
     .from('tasks')
     .select(`
       *,
@@ -196,17 +200,14 @@ export async function updateTaskStatus(
   taskId: string,
   status: 'todo' | 'in_progress' | 'completed' | 'cancelled'
 ): Promise<Task> {
-  const updateData: {
-    status: typeof status;
-    updated_at: string;
-    completed_at: string | null;
-  } = {
+  const updateData = {
     status,
     updated_at: new Date().toISOString(),
     completed_at: status === 'completed' ? new Date().toISOString() : null,
   };
 
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
     .from('tasks')
     .update(updateData)
     .eq('id', taskId)
@@ -257,7 +258,8 @@ export async function upsertEmail(emailData: {
   has_attachments?: boolean;
 }): Promise<{ email: Email; isNew: boolean }> {
   // Check if email already exists (idempotency)
-  const { data: existing } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (supabase as any)
     .from('emails')
     .select('id')
     .eq('gmail_message_id', emailData.gmail_message_id)
@@ -265,7 +267,8 @@ export async function upsertEmail(emailData: {
 
   if (existing) {
     // Email already processed
-    const { data: email } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: email } = await (supabase as any)
       .from('emails')
       .select('*')
       .eq('id', existing.id)
@@ -274,7 +277,8 @@ export async function upsertEmail(emailData: {
   }
 
   // Upsert sender into people table
-  const { data: sender, error: senderError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: sender, error: senderError } = await (supabase as any)
     .from('people')
     .upsert(
       {
@@ -291,7 +295,8 @@ export async function upsertEmail(emailData: {
   }
 
   // Insert email
-  const { data: email, error: emailError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: email, error: emailError } = await (supabase as any)
     .from('emails')
     .insert({
       gmail_message_id: emailData.gmail_message_id,
@@ -347,7 +352,8 @@ export async function insertSuggestions(
     return [];
   }
 
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
     .from('suggestions')
     .insert(
       kincaidSuggestions.map((s) => ({
@@ -357,7 +363,7 @@ export async function insertSuggestions(
         suggested_due_date: s.suggested_due_date,
         suggested_owner_email: s.suggested_owner_email,
         priority: s.priority,
-        status: 'pending' as const,
+        status: 'pending',
         ai_model_used: aiModelUsed || null,
       }))
     )
@@ -367,5 +373,5 @@ export async function insertSuggestions(
     throw new Error(`Failed to insert suggestions: ${error.message}`);
   }
 
-  return data;
+  return data as Suggestion[];
 }

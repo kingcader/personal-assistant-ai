@@ -42,7 +42,7 @@ export default function TasksPage() {
   async function loadTasks() {
     try {
       const data = await getTasksByOwner('kincaidgarrett@gmail.com', includeCompleted);
-      setTasks(data as Task[]);
+      setTasks(data as unknown as Task[]);
     } catch (error) {
       console.error('Failed to load tasks:', error);
       showToast('Failed to load tasks', 'error');
