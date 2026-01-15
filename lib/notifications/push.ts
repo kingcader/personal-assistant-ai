@@ -54,15 +54,27 @@ export interface PushPayload {
 }
 
 /**
+ * Result of sending to a single subscription
+ */
+export interface SendResult {
+  success: boolean;
+  endpoint: string;
+  error?: string;
+  statusCode?: number;
+}
+
+/**
  * Send push notification to a single subscription
  */
 async function sendToSubscription(
   subscription: PushSubscription,
   payload: PushPayload
-): Promise<boolean> {
+): Promise<SendResult> {
+  const endpointPreview = subscription.endpoint.slice(0, 50) + '...';
+
   // Ensure VAPID is configured
   if (!ensureVapidConfigured()) {
-    return false;
+    return { success: false, endpoint: endpointPreview, error: 'VAPID not configured' };
   }
 
   try {
@@ -70,6 +82,9 @@ async function sendToSubscription(
       endpoint: subscription.endpoint,
       keys: subscription.keys,
     };
+
+    console.log(`📱 Attempting push to: ${endpointPreview}`);
+    console.log(`📱 Keys: p256dh=${subscription.keys.p256dh?.slice(0, 20)}..., auth=${subscription.keys.auth?.slice(0, 10)}...`);
 
     await webpush.sendNotification(
       pushSubscription,
@@ -79,19 +94,26 @@ async function sendToSubscription(
     // Update last used timestamp
     await updateSubscriptionLastUsed(subscription.id);
 
-    return true;
+    console.log(`📱 Push successful to: ${endpointPreview}`);
+    return { success: true, endpoint: endpointPreview };
   } catch (error: unknown) {
     const statusCode = (error as { statusCode?: number })?.statusCode;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    console.error(`📱 Push failed for ${endpointPreview}:`, { statusCode, errorMessage, error });
 
     // Handle expired/invalid subscriptions
     if (statusCode === 404 || statusCode === 410) {
-      console.log(`📱 Subscription expired, deactivating: ${subscription.endpoint.slice(0, 50)}...`);
+      console.log(`📱 Subscription expired, deactivating: ${endpointPreview}`);
       await deactivatePushSubscription(subscription.endpoint);
-    } else {
-      console.error(`📱 Push failed for ${subscription.endpoint.slice(0, 50)}...:`, error);
     }
 
-    return false;
+    return {
+      success: false,
+      endpoint: endpointPreview,
+      error: errorMessage,
+      statusCode
+    };
   }
 }
 
@@ -102,24 +124,26 @@ export async function sendPushToAll(payload: PushPayload): Promise<{
   sent: number;
   failed: number;
   total: number;
+  errors: SendResult[];
 }> {
   // Ensure VAPID is configured before sending
   if (!ensureVapidConfigured()) {
     console.log('📱 Push notifications disabled - VAPID not configured');
-    return { sent: 0, failed: 0, total: 0 };
+    return { sent: 0, failed: 0, total: 0, errors: [] };
   }
 
   const subscriptions = await getActivePushSubscriptions();
 
   if (subscriptions.length === 0) {
     console.log('📱 No active push subscriptions');
-    return { sent: 0, failed: 0, total: 0 };
+    return { sent: 0, failed: 0, total: 0, errors: [] };
   }
 
   console.log(`📱 Sending push to ${subscriptions.length} device(s)...`);
 
   let sent = 0;
   let failed = 0;
+  const errors: SendResult[] = [];
 
   // Send to all subscriptions in parallel
   const results = await Promise.allSettled(
@@ -127,16 +151,25 @@ export async function sendPushToAll(payload: PushPayload): Promise<{
   );
 
   for (const result of results) {
-    if (result.status === 'fulfilled' && result.value) {
-      sent++;
+    if (result.status === 'fulfilled') {
+      if (result.value.success) {
+        sent++;
+      } else {
+        failed++;
+        errors.push(result.value);
+      }
     } else {
       failed++;
+      errors.push({ success: false, endpoint: 'unknown', error: result.reason?.message || 'Promise rejected' });
     }
   }
 
   console.log(`📱 Push results: ${sent} sent, ${failed} failed`);
+  if (errors.length > 0) {
+    console.log(`📱 Errors:`, errors);
+  }
 
-  return { sent, failed, total: subscriptions.length };
+  return { sent, failed, total: subscriptions.length, errors };
 }
 
 /**
@@ -199,6 +232,7 @@ export async function sendTestPush(): Promise<{
   sent: number;
   failed: number;
   total: number;
+  errors: SendResult[];
 }> {
   return sendPushToAll({
     title: 'Test Notification',
