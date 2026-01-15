@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 
@@ -16,6 +16,41 @@ export default function SettingsPage() {
 
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<{
+    isIOS: boolean;
+    isStandalone: boolean;
+    hasPushManager: boolean;
+    hasServiceWorker: boolean;
+    hasNotification: boolean;
+  } | null>(null);
+
+  // Run diagnostics on mount
+  useEffect(() => {
+    const userAgent = navigator.userAgent;
+    const isIOS = /iPhone|iPad|iPod/.test(userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+                         (window.navigator as any).standalone === true;
+    const hasPushManager = 'PushManager' in window;
+    const hasServiceWorker = 'serviceWorker' in navigator;
+    const hasNotification = 'Notification' in window;
+
+    setDiagnostics({
+      isIOS,
+      isStandalone,
+      hasPushManager,
+      hasServiceWorker,
+      hasNotification,
+    });
+
+    console.log('[Settings] Diagnostics:', {
+      isIOS,
+      isStandalone,
+      hasPushManager,
+      hasServiceWorker,
+      hasNotification,
+      userAgent,
+    });
+  }, []);
 
   const handleTestPush = async () => {
     setIsTesting(true);
@@ -207,6 +242,39 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground mb-3">
                 Enable push notifications first to send a test.
               </p>
+            )}
+
+            {/* Diagnostics */}
+            {diagnostics && diagnostics.isIOS && (
+              <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded text-sm">
+                <strong className="text-blue-600 dark:text-blue-400">iOS Diagnostics:</strong>
+                <ul className="mt-2 space-y-1 text-gray-700 dark:text-gray-300">
+                  <li className="flex items-center gap-2">
+                    <span>{diagnostics.isStandalone ? '✅' : '❌'}</span>
+                    <span>Installed to Home Screen: {diagnostics.isStandalone ? 'Yes' : 'No'}</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span>{diagnostics.hasPushManager ? '✅' : '❌'}</span>
+                    <span>Push API Available: {diagnostics.hasPushManager ? 'Yes' : 'No'}</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span>{diagnostics.hasServiceWorker ? '✅' : '❌'}</span>
+                    <span>Service Worker Support: {diagnostics.hasServiceWorker ? 'Yes' : 'No'}</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span>{diagnostics.hasNotification ? '✅' : '❌'}</span>
+                    <span>Notifications API: {diagnostics.hasNotification ? 'Yes' : 'No'}</span>
+                  </li>
+                </ul>
+                {!diagnostics.isStandalone && (
+                  <div className="mt-3 p-2 bg-red-500/10 border border-red-500/20 rounded">
+                    <p className="text-red-600 dark:text-red-400 font-medium">⚠️ App not installed properly!</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                      Tap the Share button in Safari and select "Add to Home Screen". Then open the app from the home screen icon.
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded text-sm text-yellow-600 dark:text-yellow-400">

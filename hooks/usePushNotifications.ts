@@ -113,9 +113,18 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     setError(null);
 
     try {
+      console.log('[Push] Starting subscription process...');
+
+      // Check if service worker is supported
+      if (!('serviceWorker' in navigator)) {
+        throw new Error('Service workers not supported');
+      }
+
       // Request permission
+      console.log('[Push] Requesting notification permission...');
       const result = await Notification.requestPermission();
       setPermission(result as PermissionState);
+      console.log('[Push] Permission result:', result);
 
       if (result !== 'granted') {
         setError('Notification permission denied');
@@ -123,17 +132,40 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         return;
       }
 
-      // Get service worker registration
-      const registration = await navigator.serviceWorker.ready;
+      // Wait for service worker to be ready (with timeout for iOS)
+      console.log('[Push] Waiting for service worker...');
+      const registration = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Service worker timeout')), 10000)
+        )
+      ]);
+      console.log('[Push] Service worker ready:', registration.active?.scriptURL);
+
+      // Check if already subscribed
+      const existingSub = await registration.pushManager.getSubscription();
+      if (existingSub) {
+        console.log('[Push] Unsubscribing from existing subscription...');
+        await existingSub.unsubscribe();
+      }
 
       // Subscribe to push
+      console.log('[Push] Creating new push subscription...');
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
       });
+      console.log('[Push] Subscription created:', subscription.endpoint.slice(0, 60) + '...');
+
+      // Detect device info
+      const userAgent = navigator.userAgent;
+      const isIOS = /iPhone|iPad|iPod/.test(userAgent);
+      const isSafari = /Safari/.test(userAgent) && !/Chrome|CriOS/.test(userAgent);
+      const deviceName = isIOS ? (isSafari ? 'iPhone Safari' : 'iPhone') : 'Unknown';
 
       // Send subscription to server
       // Keys must be URL-safe base64 encoded for web-push
+      console.log('[Push] Sending subscription to server...');
       const response = await fetch('/api/notifications/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -143,18 +175,32 @@ export function usePushNotifications(): UsePushNotificationsReturn {
             p256dh: arrayBufferToUrlSafeBase64(subscription.getKey('p256dh')!),
             auth: arrayBufferToUrlSafeBase64(subscription.getKey('auth')!),
           },
+          device_name: deviceName,
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save subscription');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error: ${response.status}`);
       }
 
+      const result_1 = await response.json();
+      console.log('[Push] Subscription saved to server:', result_1.subscription_id);
+
       setIsSubscribed(true);
-      console.log('Push subscription successful');
+      console.log('[Push] ✅ Subscription successful!');
     } catch (err) {
-      console.error('Push subscription error:', err);
-      setError(err instanceof Error ? err.message : 'Subscription failed');
+      console.error('[Push] ❌ Subscription error:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Subscription failed';
+
+      // Add iOS-specific error messages
+      if (errorMsg.includes('timeout')) {
+        setError('Service worker timeout - try refreshing the page');
+      } else if (errorMsg.includes('not supported')) {
+        setError('Push notifications require iOS 16.4+ and must be added to Home Screen');
+      } else {
+        setError(errorMsg);
+      }
     } finally {
       setIsLoading(false);
     }
