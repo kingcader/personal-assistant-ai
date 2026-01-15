@@ -19,7 +19,7 @@ STRICT OUTPUT FORMAT (JSON object with tasks array):
     {
       "title": "string (required, max 200 chars, concise action)",
       "why": "string (required, 1 sentence explaining why recipient needs to do this)",
-      "suggested_due_date": "YYYY-MM-DD or null (NEVER hallucinate)",
+      "suggested_due_date": "YYYY-MM-DD (required - use email received date if no deadline mentioned)",
       "suggested_owner_email": "string (ALWAYS the recipient's email from TO field)",
       "priority": "low | med | high"
     }
@@ -35,9 +35,9 @@ VALIDATION RULES:
 1. title: Must be actionable verb phrase from recipient's perspective (e.g., "Review Q4 budget proposal", "Follow up with Jason")
 2. why: Must explain what the recipient needs to do and why
 3. suggested_due_date:
-   - ONLY extract if explicitly mentioned in email ("by Friday", "due March 15", "tomorrow")
-   - Convert relative dates to YYYY-MM-DD format based on email received date
-   - Use NULL if no deadline mentioned (DO NOT GUESS)
+   - If explicitly mentioned in email ("by Friday", "due March 15", "tomorrow"), convert to YYYY-MM-DD
+   - If NO deadline mentioned, DEFAULT TO THE EMAIL RECEIVED DATE (same day the email was received)
+   - NEVER use null - always provide a date (either explicit or default to received date)
 4. suggested_owner_email:
    - MUST ALWAYS be "kincaidgarrett@gmail.com" - NO EXCEPTIONS
    - NEVER use any other email address, period
@@ -106,10 +106,11 @@ Here's what I have for today:
 - Make sure Escrow can start receiving the deposits."
 Output:
 {"tasks": [
-  {"title": "Get the contract from Jason and review it", "why": "Listed in Kincaid's daily report", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"},
-  {"title": "Send updated Subscription to Stephanie", "why": "Listed in Kincaid's daily report", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"},
-  {"title": "Make sure Escrow can start receiving the deposits", "why": "Listed in Kincaid's daily report", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"}
+  {"title": "Get the contract from Jason and review it", "why": "Listed in Kincaid's daily report", "suggested_due_date": "2026-01-14", "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"},
+  {"title": "Send updated Subscription to Stephanie", "why": "Listed in Kincaid's daily report", "suggested_due_date": "2026-01-14", "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"},
+  {"title": "Make sure Escrow can start receiving the deposits", "why": "Listed in Kincaid's daily report", "suggested_due_date": "2026-01-14", "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"}
 ]}
+(Note: Due dates default to email received date when not explicitly mentioned)
 
 EXAMPLES - Other Person's Daily Report (NO Kincaid mention):
 Subject: "Daily Report | Tanner | 2026-01-14"
@@ -134,7 +135,7 @@ Have Kincaid review the new contract before sending to legal
 Update the accounting app"
 → "Kincaid" IS in body → Extract ONLY:
 {"tasks": [
-  {"title": "Review the new contract before sending to legal", "why": "Tanner's daily report requests Kincaid to review contract", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"}
+  {"title": "Review the new contract before sending to legal", "why": "Tanner's daily report requests Kincaid to review contract", "suggested_due_date": "2026-01-14", "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"}
 ]}
 
 DO NOT CREATE TASKS FOR:
@@ -183,17 +184,19 @@ Output: {"tasks": []}
 (No action required from recipient)
 
 Email TO: kincaid@company.com
+Received: 2026-01-14
 "The server is showing errors. Can someone check the logs?"
 Output:
 {"tasks": [
   {
     "title": "Check server logs for errors",
     "why": "Email reports server errors and requests investigation",
-    "suggested_due_date": null,
+    "suggested_due_date": "2026-01-14",
     "suggested_owner_email": "kincaid@company.com",
     "priority": "high"
   }
 ]}
+(Due date defaults to email received date)
 
 Email FROM: kincaidgarrett@gmail.com
 TO: kincaidgarrett@gmail.com
