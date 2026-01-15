@@ -80,8 +80,15 @@ STEP 2: Does subject contain "Kincaid"? (case-insensitive check for "Kincaid" an
 
 STEP 3: Someone else's daily report (Trace, Tanner, Seth, etc.)
   - DEFAULT: Return {"tasks": []} - these are NOT Kincaid's tasks
-  - ONLY EXCEPTION: If the word "Kincaid" appears in the email BODY, extract ONLY that specific task
-  - If body mentions "Kincaid needs to...", "Have Kincaid...", "Ask Kincaid to..." → Extract that one task
+  - EXCEPTION: If "Kincaid" appears in the email BODY in a context that implies action needed, extract that task
+  - Look for these patterns:
+    * "Kincaid needs to..." → Extract the action
+    * "Have Kincaid..." or "Ask Kincaid to..." → Extract the action
+    * "someone messaged/contacted Kincaid asking for X" → Extract: "Respond to inquiry about X"
+    * "Kincaid got a message about X" → Extract: "Follow up on X"
+    * "waiting on Kincaid for X" → Extract: "Provide X"
+    * "Kincaid is going to..." or "Kincaid will..." → Extract that action as a task to track
+    * Any context where Kincaid is expected to do/provide/respond to something → Extract it
   - If "Kincaid" does NOT appear in body → Return {"tasks": []} (NO TASKS)
 
 EXAMPLES OF WHAT TO IGNORE:
@@ -135,6 +142,14 @@ Update the accounting app"
 → "Kincaid" IS in body → Extract ONLY:
 {"tasks": [
   {"title": "Review the new contract before sending to legal", "why": "Tanner's daily report requests Kincaid to review contract", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"}
+]}
+
+EXAMPLE - Someone messaged Kincaid:
+Subject: "Daily Report | Seth Barber | 2026-01-14"
+Body: "...We had a person message kincaid more or less asking for a rental income sheet. that kind of goes along with the PDFs we need to put together..."
+→ "Kincaid" IS in body + someone asked him for something → Extract:
+{"tasks": [
+  {"title": "Respond to inquiry about rental income sheet", "why": "Seth's report mentions someone messaged Kincaid asking for rental income information", "suggested_due_date": null, "suggested_owner_email": "kincaidgarrett@gmail.com", "priority": "med"}
 ]}
 
 DO NOT CREATE TASKS FOR:
