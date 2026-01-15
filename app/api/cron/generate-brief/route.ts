@@ -43,6 +43,7 @@ function getTodayInCostaRica(): string {
  */
 async function fetchMorningBriefData(): Promise<MorningBriefData> {
   const today = getTodayInCostaRica();
+  console.log(`📋 Morning brief: Today's date (Costa Rica): ${today}`);
 
   // Tasks due today (with explicit due date = today)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,12 +65,18 @@ async function fetchMorningBriefData(): Promise<MorningBriefData> {
 
   // Overdue tasks (due_date < today and not completed)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: tasksOverdue } = await (supabase as any)
+  const { data: tasksOverdue, error: overdueError } = await (supabase as any)
     .from('tasks')
     .select('id, title, priority, due_date')
     .lt('due_date', today)
     .in('status', ['todo', 'in_progress'])
     .order('due_date', { ascending: true });
+
+  console.log(`📋 Overdue tasks query:`, {
+    count: tasksOverdue?.length ?? 0,
+    error: overdueError?.message ?? null,
+    sample: tasksOverdue?.slice(0, 3).map((t: any) => ({ title: t.title, due_date: t.due_date })) ?? [],
+  });
 
   // Pending task suggestions count
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,12 +167,19 @@ async function fetchEveningBriefData(): Promise<EveningBriefData> {
 
   // Overdue tasks (due_date < today and not completed)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: tasksOverdue } = await (supabase as any)
+  const { data: tasksOverdue, error: overdueError } = await (supabase as any)
     .from('tasks')
     .select('id, title, priority, due_date')
     .lt('due_date', today)
     .in('status', ['todo', 'in_progress'])
     .order('due_date', { ascending: true });
+
+  console.log(`📋 Evening brief - Overdue tasks query:`, {
+    today,
+    count: tasksOverdue?.length ?? 0,
+    error: overdueError?.message ?? null,
+    sample: tasksOverdue?.slice(0, 3).map((t: any) => ({ title: t.title, due_date: t.due_date })) ?? [],
+  });
 
   // Tasks due tomorrow
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
