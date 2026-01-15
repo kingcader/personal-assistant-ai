@@ -22,6 +22,18 @@ export interface MorningBriefData {
     priority: string;
     due_date: string | null;
   }>;
+  tasks_no_date: Array<{
+    id: string;
+    title: string;
+    priority: string;
+  }>;
+  tasks_overdue: Array<{
+    id: string;
+    title: string;
+    priority: string;
+    due_date: string;
+    days_overdue: number;
+  }>;
   pending_task_suggestions: number;
   pending_follow_ups: number;
   waiting_on_threads: Array<{
@@ -41,12 +53,28 @@ export interface EveningBriefData {
     title: string;
     completed_at: string;
   }>;
-  tasks_still_pending: Array<{
+  tasks_overdue: Array<{
     id: string;
     title: string;
     priority: string;
-    due_date: string | null;
-    is_overdue: boolean;
+    due_date: string;
+    days_overdue: number;
+  }>;
+  tasks_due_tomorrow: Array<{
+    id: string;
+    title: string;
+    priority: string;
+  }>;
+  tasks_no_date: Array<{
+    id: string;
+    title: string;
+    priority: string;
+  }>;
+  tasks_future: Array<{
+    id: string;
+    title: string;
+    priority: string;
+    due_date: string;
   }>;
   follow_ups_sent_today: number;
   suggestions_approved_today: number;
@@ -81,11 +109,31 @@ export async function generateMorningBrief(
   // Build sections
   const sections: BriefContent['sections'] = [];
 
+  // Overdue tasks (most important - shown first)
+  if (data.tasks_overdue.length > 0) {
+    sections.push({
+      title: `Past Due (${data.tasks_overdue.length})`,
+      items: data.tasks_overdue.map(
+        (t) => `⚠️ [${t.priority.toUpperCase()}] ${t.title} (${t.days_overdue} day${t.days_overdue > 1 ? 's' : ''} overdue)`
+      ),
+    });
+  }
+
   // Tasks due today
   if (data.tasks_due_today.length > 0) {
     sections.push({
       title: 'Tasks Due Today',
       items: data.tasks_due_today.map(
+        (t) => `[${t.priority.toUpperCase()}] ${t.title}`
+      ),
+    });
+  }
+
+  // Tasks with no due date (need to be done, just no specific deadline)
+  if (data.tasks_no_date.length > 0) {
+    sections.push({
+      title: 'No Due Date (Need Attention)',
+      items: data.tasks_no_date.map(
         (t) => `[${t.priority.toUpperCase()}] ${t.title}`
       ),
     });
@@ -117,14 +165,17 @@ export async function generateMorningBrief(
   }
 
   // Generate AI summary
+  const totalTasksNeedingAttention = data.tasks_due_today.length + data.tasks_no_date.length + data.tasks_overdue.length;
   const prompt = `Generate a brief, friendly morning summary (2-3 sentences) for a daily report.
 
 Date: ${today}
+Tasks overdue: ${data.tasks_overdue.length}
 Tasks due today: ${data.tasks_due_today.length}
+Tasks with no due date: ${data.tasks_no_date.length}
 Threads waiting on reply: ${data.waiting_on_threads.length}
 Pending approvals: ${data.pending_task_suggestions + data.pending_follow_ups}
 
-Keep it concise and actionable. Focus on what needs attention today.`;
+Keep it concise and actionable. ${data.tasks_overdue.length > 0 ? 'Emphasize the overdue tasks that need immediate attention.' : 'Focus on what needs attention today.'}`;
 
   let summary = `Good morning! Today is ${today}.`;
 
@@ -173,17 +224,46 @@ export async function generateEveningBrief(
   if (data.tasks_completed_today.length > 0) {
     sections.push({
       title: 'Completed Today',
-      items: data.tasks_completed_today.map((t) => t.title),
+      items: data.tasks_completed_today.map((t) => `✅ ${t.title}`),
     });
   }
 
-  // Still pending
-  if (data.tasks_still_pending.length > 0) {
-    const overdueCount = data.tasks_still_pending.filter((t) => t.is_overdue).length;
+  // Overdue tasks (most important)
+  if (data.tasks_overdue.length > 0) {
     sections.push({
-      title: overdueCount > 0 ? `Still Pending (${overdueCount} overdue)` : 'Still Pending',
-      items: data.tasks_still_pending.map(
-        (t) => `${t.is_overdue ? '⚠️ ' : ''}[${t.priority.toUpperCase()}] ${t.title}`
+      title: `Past Due (${data.tasks_overdue.length})`,
+      items: data.tasks_overdue.map(
+        (t) => `⚠️ [${t.priority.toUpperCase()}] ${t.title} (${t.days_overdue} day${t.days_overdue > 1 ? 's' : ''} overdue)`
+      ),
+    });
+  }
+
+  // Tasks due tomorrow
+  if (data.tasks_due_tomorrow.length > 0) {
+    sections.push({
+      title: 'Due Tomorrow',
+      items: data.tasks_due_tomorrow.map(
+        (t) => `[${t.priority.toUpperCase()}] ${t.title}`
+      ),
+    });
+  }
+
+  // Tasks with no due date
+  if (data.tasks_no_date.length > 0) {
+    sections.push({
+      title: 'No Due Date (Need Attention)',
+      items: data.tasks_no_date.map(
+        (t) => `[${t.priority.toUpperCase()}] ${t.title}`
+      ),
+    });
+  }
+
+  // Future tasks (brief preview)
+  if (data.tasks_future.length > 0) {
+    sections.push({
+      title: 'Coming Up',
+      items: data.tasks_future.slice(0, 5).map(
+        (t) => `[${t.priority.toUpperCase()}] ${t.title} (due ${t.due_date})`
       ),
     });
   }
@@ -207,15 +287,18 @@ export async function generateEveningBrief(
   }
 
   // Generate AI summary
+  const totalPending = data.tasks_overdue.length + data.tasks_due_tomorrow.length + data.tasks_no_date.length + data.tasks_future.length;
   const prompt = `Generate a brief, friendly end-of-day summary (2-3 sentences) for a daily report.
 
 Date: ${today}
-Tasks completed: ${data.tasks_completed_today.length}
-Tasks still pending: ${data.tasks_still_pending.length}
-Overdue tasks: ${data.tasks_still_pending.filter((t) => t.is_overdue).length}
+Tasks completed today: ${data.tasks_completed_today.length}
+Tasks overdue: ${data.tasks_overdue.length}
+Tasks due tomorrow: ${data.tasks_due_tomorrow.length}
+Tasks with no due date: ${data.tasks_no_date.length}
+Future tasks: ${data.tasks_future.length}
 Follow-ups sent: ${data.follow_ups_sent_today}
 
-Keep it concise. Acknowledge progress and note any concerns.`;
+Keep it concise. ${data.tasks_completed_today.length > 0 ? 'Acknowledge the progress made today.' : ''} ${data.tasks_overdue.length > 0 ? 'Note the overdue tasks that need attention.' : ''}`;
 
   let summary = `End of day summary for ${today}.`;
 

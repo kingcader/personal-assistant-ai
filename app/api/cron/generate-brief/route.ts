@@ -43,7 +43,7 @@ function getTodayInCostaRica(): string {
 async function fetchMorningBriefData(): Promise<MorningBriefData> {
   const today = getTodayInCostaRica();
 
-  // Tasks due today
+  // Tasks due today (with explicit due date = today)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: tasksDueToday } = await (supabase as any)
     .from('tasks')
@@ -51,6 +51,24 @@ async function fetchMorningBriefData(): Promise<MorningBriefData> {
     .eq('due_date', today)
     .in('status', ['todo', 'in_progress'])
     .order('priority', { ascending: false });
+
+  // Tasks with no due date (need attention but no specific deadline)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tasksNoDate } = await (supabase as any)
+    .from('tasks')
+    .select('id, title, priority')
+    .is('due_date', null)
+    .in('status', ['todo', 'in_progress'])
+    .order('priority', { ascending: false });
+
+  // Overdue tasks (due_date < today and not completed)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tasksOverdue } = await (supabase as any)
+    .from('tasks')
+    .select('id, title, priority, due_date')
+    .lt('due_date', today)
+    .in('status', ['todo', 'in_progress'])
+    .order('due_date', { ascending: true });
 
   // Pending task suggestions count
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -75,6 +93,9 @@ async function fetchMorningBriefData(): Promise<MorningBriefData> {
     .eq('status', 'active')
     .order('waiting_since', { ascending: true });
 
+  // Calculate days overdue for each overdue task
+  const todayDate = new Date(today);
+
   return {
     tasks_due_today: (tasksDueToday || []).map((t: any) => ({
       id: t.id,
@@ -82,6 +103,22 @@ async function fetchMorningBriefData(): Promise<MorningBriefData> {
       priority: t.priority,
       due_date: t.due_date,
     })),
+    tasks_no_date: (tasksNoDate || []).map((t: any) => ({
+      id: t.id,
+      title: t.title,
+      priority: t.priority,
+    })),
+    tasks_overdue: (tasksOverdue || []).map((t: any) => {
+      const dueDate = new Date(t.due_date);
+      const daysOverdue = Math.floor((todayDate.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+      return {
+        id: t.id,
+        title: t.title,
+        priority: t.priority,
+        due_date: t.due_date,
+        days_overdue: daysOverdue,
+      };
+    }),
     pending_task_suggestions: pendingTaskSuggestions || 0,
     pending_follow_ups: pendingFollowUps || 0,
     waiting_on_threads: (waitingOnThreads || []).map((t: any) => ({
@@ -105,6 +142,12 @@ async function fetchEveningBriefData(): Promise<EveningBriefData> {
   const startOfDay = `${today}T00:00:00`;
   const endOfDay = `${today}T23:59:59`;
 
+  // Calculate tomorrow's date
+  const todayDate = new Date(today);
+  const tomorrowDate = new Date(todayDate);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrow = tomorrowDate.toISOString().split('T')[0];
+
   // Tasks completed today
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: tasksCompletedToday } = await (supabase as any)
@@ -114,13 +157,42 @@ async function fetchEveningBriefData(): Promise<EveningBriefData> {
     .gte('completed_at', startOfDay)
     .lte('completed_at', endOfDay);
 
-  // Tasks still pending (all non-completed tasks)
+  // Overdue tasks (due_date < today and not completed)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: tasksPending } = await (supabase as any)
+  const { data: tasksOverdue } = await (supabase as any)
     .from('tasks')
     .select('id, title, priority, due_date')
+    .lt('due_date', today)
     .in('status', ['todo', 'in_progress'])
-    .order('due_date', { ascending: true, nullsFirst: false });
+    .order('due_date', { ascending: true });
+
+  // Tasks due tomorrow
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tasksDueTomorrow } = await (supabase as any)
+    .from('tasks')
+    .select('id, title, priority')
+    .eq('due_date', tomorrow)
+    .in('status', ['todo', 'in_progress'])
+    .order('priority', { ascending: false });
+
+  // Tasks with no due date
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tasksNoDate } = await (supabase as any)
+    .from('tasks')
+    .select('id, title, priority')
+    .is('due_date', null)
+    .in('status', ['todo', 'in_progress'])
+    .order('priority', { ascending: false });
+
+  // Future tasks (due after tomorrow)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tasksFuture } = await (supabase as any)
+    .from('tasks')
+    .select('id, title, priority, due_date')
+    .gt('due_date', tomorrow)
+    .in('status', ['todo', 'in_progress'])
+    .order('due_date', { ascending: true })
+    .limit(10);
 
   // Follow-ups sent today
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,12 +229,32 @@ async function fetchEveningBriefData(): Promise<EveningBriefData> {
       title: t.title,
       completed_at: t.completed_at!,
     })),
-    tasks_still_pending: (tasksPending || []).map((t: any) => ({
+    tasks_overdue: (tasksOverdue || []).map((t: any) => {
+      const dueDate = new Date(t.due_date);
+      const daysOverdue = Math.floor((todayDate.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+      return {
+        id: t.id,
+        title: t.title,
+        priority: t.priority,
+        due_date: t.due_date,
+        days_overdue: daysOverdue,
+      };
+    }),
+    tasks_due_tomorrow: (tasksDueTomorrow || []).map((t: any) => ({
+      id: t.id,
+      title: t.title,
+      priority: t.priority,
+    })),
+    tasks_no_date: (tasksNoDate || []).map((t: any) => ({
+      id: t.id,
+      title: t.title,
+      priority: t.priority,
+    })),
+    tasks_future: (tasksFuture || []).map((t: any) => ({
       id: t.id,
       title: t.title,
       priority: t.priority,
       due_date: t.due_date,
-      is_overdue: t.due_date ? t.due_date < today : false,
     })),
     follow_ups_sent_today: followUpsSentToday || 0,
     suggestions_approved_today: suggestionsApprovedToday || 0,
