@@ -29,9 +29,17 @@ export default function SettingsPage() {
       const result = await response.json();
 
       if (result.success) {
-        setTestStatus(
-          `Test notification sent to ${result.sent} device(s)${result.failed > 0 ? ` (${result.failed} failed)` : ''}`
-        );
+        let status = `Sent: ${result.sent}, Failed: ${result.failed}, Total: ${result.total}`;
+
+        // Show errors if any
+        if (result.errors && result.errors.length > 0) {
+          const errorDetails = result.errors.map((e: any) =>
+            `${e.error || 'Unknown error'}${e.statusCode ? ` (${e.statusCode})` : ''}`
+          ).join('; ');
+          status += ` | Errors: ${errorDetails}`;
+        }
+
+        setTestStatus(status);
       } else {
         setTestStatus(`Error: ${result.error}`);
       }
@@ -51,9 +59,17 @@ export default function SettingsPage() {
       const result = await response.json();
 
       if (result.vapid_configured) {
-        setTestStatus(
-          `VAPID configured. ${result.active_subscriptions} active subscription(s).`
-        );
+        let status = `VAPID: OK | Subscriptions: ${result.active_subscriptions}`;
+
+        // Show subscription details
+        if (result.subscriptions && result.subscriptions.length > 0) {
+          const subDetails = result.subscriptions.map((s: any) =>
+            `${s.endpoint_preview} (created: ${new Date(s.created_at).toLocaleDateString()})`
+          ).join(' | ');
+          status += ` | ${subDetails}`;
+        }
+
+        setTestStatus(status);
       } else {
         setTestStatus('VAPID keys not configured - push notifications disabled');
       }
