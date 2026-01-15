@@ -29,6 +29,12 @@ export default function Home() {
           >
             Waiting On
           </Link>
+          <Link
+            href="/briefs"
+            className="rounded-lg bg-purple-600 px-6 py-3 text-white hover:bg-purple-700 transition-colors"
+          >
+            Daily Briefs
+          </Link>
         </div>
 
         {/* Secondary Links */}

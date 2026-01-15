@@ -30,6 +30,7 @@ import {
 } from '@/lib/supabase/thread-queries';
 import { upsertEmail } from '@/lib/supabase/task-queries';
 import { fetchMessagesInThreads, parseEmailAddress } from '@/lib/gmail/client';
+import { notify } from '@/lib/notifications/push';
 import type { ThreadParticipant } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -201,6 +202,21 @@ export async function GET(request: NextRequest) {
               console.log(
                 `⏳ Waiting on ${waitingOnEmail} in thread: ${firstEmail.subject} (${daysSinceMyMessage.toFixed(1)} days)`
               );
+
+              // Send push notification for waiting-on detection
+              try {
+                await notify({
+                  type: 'waiting_on',
+                  title: 'Waiting for Reply',
+                  body: `${waitingOnEmail} hasn't replied to "${firstEmail.subject}" (${Math.floor(daysSinceMyMessage)} days)`,
+                  link: '/waiting-on',
+                  tag: `waiting-on-${thread.id}`,
+                  related_entity_type: 'thread',
+                  related_entity_id: thread.id,
+                });
+              } catch (notifyError) {
+                console.error('Failed to send waiting-on notification:', notifyError);
+              }
             }
           }
         } else if (thread.waiting_on_email) {

@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchEmailsWithLabel, parseEmailAddress } from '@/lib/gmail/client';
 import { upsertEmail, insertSuggestions } from '@/lib/supabase/task-queries';
 import { TASK_EXTRACTION_SYSTEM_PROMPT, validateTaskExtractionResult } from '@/lib/ai/task-extraction-prompt';
+import { notify } from '@/lib/notifications/push';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,6 +91,21 @@ export async function GET(request: NextRequest) {
             aiProvider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-sonnet'
           );
           results.suggestions_created += validSuggestions.length;
+
+          // 3e. Send push notification for new suggestions
+          try {
+            await notify({
+              type: 'task_suggestion',
+              title: `${validSuggestions.length} New Task${validSuggestions.length > 1 ? 's' : ''} to Review`,
+              body: validSuggestions.length === 1
+                ? validSuggestions[0].title
+                : `From: ${email.subject}`,
+              link: '/review',
+              tag: 'task-suggestions',
+            });
+          } catch (notifyError) {
+            console.error('Failed to send notification:', notifyError);
+          }
         }
 
         results.processed++;

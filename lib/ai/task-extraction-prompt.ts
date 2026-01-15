@@ -63,32 +63,37 @@ If the email is FROM Kincaid TO Kincaid (self-sent), treat first-person statemen
 This is Kincaid noting tasks for himself to track in the system.
 
 DAILY REPORT DETECTION (OCHO REPORTS):
-These are automated daily reports from Ocho Reports. Subject format: "Daily Report | [Name] | [Date]"
+These are automated daily reports from Ocho Reports. Subject contains "Daily Report" and a person's name.
+
+CRITICAL RULE FOR DAILY REPORTS:
+- If subject contains "Daily Report" AND does NOT contain "Kincaid", return {"tasks": []} IMMEDIATELY
+- Do NOT extract ANY tasks from other people's daily reports (Trace, Tanner, Seth, Stephanie, etc.)
+- The ONLY exception: if "Kincaid" is explicitly mentioned in the body asking him to do something
 
 STEP 1: Does subject contain "Daily Report"?
   - NO → Process normally (not a daily report)
   - YES → Go to Step 2
 
-STEP 2: Does subject contain "Kincaid"? (e.g., "Daily Report | Kincaid Garrett | 2026-01-14")
-  - YES → This is KINCAID'S daily report
-  - The report contains tasks Kincaid plans to do
-  - If the report has a "Tomorrow" or "Next Day" section, extract ONLY those tasks
-  - If no "Tomorrow" section exists, extract ALL listed tasks/priorities
-  - Each bullet point or line item is a separate task
-  - NO → Go to Step 3
+STEP 2: Does subject contain "Kincaid"? (case-insensitive check for "Kincaid" anywhere in subject)
+  - YES → This is KINCAID'S daily report - extract his tasks
+  - NO → This is SOMEONE ELSE'S daily report → Go to Step 3
 
-STEP 3: Subject has someone else's name (e.g., "Daily Report | Tanner", "Daily Report | Trace")
-  - This is SOMEONE ELSE'S daily report, NOT Kincaid's
-  - These are tasks the OTHER person plans to do - DO NOT extract them for Kincaid
-  - EXCEPTION: Search the body for "Kincaid" (case-insensitive)
-  - If "Kincaid" appears → Extract ONLY the specific task where Kincaid is asked to do something
-  - Common patterns to look for:
-    - "Kincaid needs to..." → Extract as task
-    - "Have Kincaid..." → Extract as task
-    - "Ask Kincaid to..." → Extract as task
-    - "Kincaid will..." → Extract as task
-    - "Touch base with Kincaid about..." → Extract: "Respond to [reporter] about [topic]"
-  - If "Kincaid" does NOT appear in body → Return {"tasks": []}
+STEP 3: Someone else's daily report (Trace, Tanner, Seth, etc.)
+  - DEFAULT: Return {"tasks": []} - these are NOT Kincaid's tasks
+  - ONLY EXCEPTION: If the word "Kincaid" appears in the email BODY, extract ONLY that specific task
+  - If body mentions "Kincaid needs to...", "Have Kincaid...", "Ask Kincaid to..." → Extract that one task
+  - If "Kincaid" does NOT appear in body → Return {"tasks": []} (NO TASKS)
+
+EXAMPLES OF WHAT TO IGNORE:
+- "Daily Report | Trace | 2026-01-14" with body listing Trace's tasks → Return {"tasks": []}
+- "Daily Report | Tanner" with body listing Tanner's priorities → Return {"tasks": []}
+- Any daily report where the name in subject is NOT Kincaid → Return {"tasks": []}
+
+KINCAID'S DAILY REPORT HANDLING:
+If subject contains "Kincaid" (e.g., "Daily Report | Kincaid Garrett | 2026-01-14"):
+  - Extract tasks from "Tomorrow" or "Next Day" section if it exists
+  - If no "Tomorrow" section, extract ALL listed tasks/priorities
+  - Each bullet point or line item is a separate task
 
 EXAMPLES - Kincaid's Daily Report:
 Subject: "Daily Report | Kincaid Garrett | 2026-01-14"
