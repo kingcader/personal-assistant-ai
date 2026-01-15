@@ -4,11 +4,12 @@
  * Used to debug push notification delivery.
  * GET /api/notifications/test - Check subscription status
  * POST /api/notifications/test - Send a test push notification
+ * DELETE /api/notifications/test - Clear all subscriptions (for re-subscribing)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { sendTestPush } from '@/lib/notifications/push';
-import { getActivePushSubscriptions } from '@/lib/supabase/notification-queries';
+import { getActivePushSubscriptions, clearAllPushSubscriptions } from '@/lib/supabase/notification-queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,6 +75,27 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error sending test push:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Clear all push subscriptions (for re-subscribing fresh)
+ */
+export async function DELETE() {
+  try {
+    const count = await clearAllPushSubscriptions();
+
+    return NextResponse.json({
+      success: true,
+      message: `Cleared ${count} subscription(s). Please re-enable push notifications.`,
+      cleared: count,
+    });
+  } catch (error) {
+    console.error('Error clearing subscriptions:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }

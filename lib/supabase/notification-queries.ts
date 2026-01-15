@@ -304,6 +304,28 @@ export async function removePushSubscription(endpoint: string): Promise<void> {
   }
 }
 
+/**
+ * Clear all push subscriptions (for fresh start)
+ */
+export async function clearAllPushSubscriptions(): Promise<number> {
+  // First count how many we have
+  const { count } = await db
+    .from('push_subscriptions')
+    .select('*', { count: 'exact', head: true });
+
+  // Delete all
+  const { error } = await db
+    .from('push_subscriptions')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all (neq a non-existent id)
+
+  if (error) {
+    throw new Error(`Failed to clear subscriptions: ${error.message}`);
+  }
+
+  return count || 0;
+}
+
 // ============================================
 // DAILY BRIEF QUERIES
 // ============================================

@@ -64,6 +64,31 @@ export default function SettingsPage() {
     }
   };
 
+  const handleClearSubscriptions = async () => {
+    setIsTesting(true);
+    setTestStatus(null);
+
+    try {
+      const response = await fetch('/api/notifications/test', {
+        method: 'DELETE',
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setTestStatus(result.message);
+        // Also unsubscribe locally
+        await unsubscribe();
+      } else {
+        setTestStatus(`Error: ${result.error}`);
+      }
+    } catch (err) {
+      setTestStatus(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-8">
       <div className="max-w-2xl mx-auto">
@@ -153,6 +178,13 @@ export default function SettingsPage() {
               >
                 {isTesting ? 'Sending...' : 'Send Test Notification'}
               </button>
+              <button
+                onClick={handleClearSubscriptions}
+                disabled={isTesting}
+                className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 transition-colors"
+              >
+                {isTesting ? 'Clearing...' : 'Clear All & Re-subscribe'}
+              </button>
             </div>
 
             {!isSubscribed && (
@@ -160,6 +192,16 @@ export default function SettingsPage() {
                 Enable push notifications first to send a test.
               </p>
             )}
+
+            <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded text-sm text-yellow-600 dark:text-yellow-400">
+              <strong>iOS Requirements:</strong>
+              <ul className="list-disc list-inside mt-1 space-y-1">
+                <li>iOS 16.4 or later required</li>
+                <li>Must add to Home Screen (not just browser)</li>
+                <li>Open app FROM the home screen icon</li>
+                <li>If not working: Clear All & Re-subscribe</li>
+              </ul>
+            </div>
 
             {testStatus && (
               <div className={`p-3 rounded text-sm ${
