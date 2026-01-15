@@ -78,19 +78,12 @@ export async function GET(request: NextRequest) {
 
         console.log(`🤖 AI returned ${suggestions.length} suggestions:`, JSON.stringify(suggestions, null, 2));
 
-        // 3c. Default null due dates to today
-        const today = new Date().toISOString().split('T')[0];
-        const suggestionsWithDates = suggestions.map((s: { suggested_due_date?: string | null; [key: string]: unknown }) => ({
-          ...s,
-          suggested_due_date: s.suggested_due_date || today,
-        }));
-
-        // 3d. Validate AI response
-        const validSuggestions = validateTaskExtractionResult(suggestionsWithDates);
+        // 3c. Validate AI response
+        const validSuggestions = validateTaskExtractionResult(suggestions);
 
         console.log(`✅ ${validSuggestions.length} suggestions passed validation`);
 
-        // 3e. Insert suggestions into database
+        // 3d. Insert suggestions into database
         if (validSuggestions.length > 0) {
           await insertSuggestions(
             dbEmail.id,
@@ -99,7 +92,7 @@ export async function GET(request: NextRequest) {
           );
           results.suggestions_created += validSuggestions.length;
 
-          // 3f. Send push notification for new suggestions
+          // 3e. Send push notification for new suggestions
           try {
             await notify({
               type: 'task_suggestion',
