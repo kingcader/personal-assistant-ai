@@ -24,6 +24,7 @@ import {
   type EveningBriefData,
 } from '@/lib/notifications/brief-generator';
 import { notify } from '@/lib/notifications/push';
+import { hasRecentNotification } from '@/lib/supabase/notification-queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -310,21 +311,35 @@ export async function GET(request: NextRequest) {
 
     console.log(`📋 Brief saved: ${savedBrief.id}`);
 
-    // 5. Send push notification
-    const { title, body } = formatBriefForNotification(briefContent, briefType);
-    const notifyResult = await notify({
-      type: briefType === 'morning' ? 'morning_brief' : 'evening_brief',
-      title,
-      body,
-      link: '/',
-      tag: `brief-${briefType}-${today}`,
+    // 5. Send push notification (only if not already sent today for this brief type)
+    const notificationType = briefType === 'morning' ? 'morning_brief' : 'evening_brief';
+    const alreadyNotified = await hasRecentNotification({
+      type: notificationType,
       related_entity_type: 'brief',
       related_entity_id: savedBrief.id,
+      withinDays: 1, // Only one notification per day per brief
     });
 
-    console.log(
-      `📋 Brief notification sent: ${notifyResult.push_sent} device(s)`
-    );
+    let notifyResult = { notification_id: null as string | null, push_sent: 0, push_failed: 0 };
+
+    if (!alreadyNotified) {
+      const { title, body } = formatBriefForNotification(briefContent, briefType);
+      notifyResult = await notify({
+        type: notificationType,
+        title,
+        body,
+        link: '/briefs',
+        tag: `brief-${briefType}-${today}`,
+        related_entity_type: 'brief',
+        related_entity_id: savedBrief.id,
+      });
+
+      console.log(
+        `📋 Brief notification sent: ${notifyResult.push_sent} device(s)`
+      );
+    } else {
+      console.log(`⏭️ Skipped brief notification (already sent today for ${briefType})`);
+    }
 
     return NextResponse.json({
       success: true,

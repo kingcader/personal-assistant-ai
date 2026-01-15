@@ -40,6 +40,12 @@ export default function Home() {
         {/* Secondary Links */}
         <div className="flex flex-wrap gap-4 text-sm">
           <Link
+            href="/settings"
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Settings
+          </Link>
+          <Link
             href="/approvals"
             className="text-muted-foreground hover:text-foreground transition-colors"
           >

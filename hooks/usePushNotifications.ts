@@ -36,6 +36,23 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+/**
+ * Convert Uint8Array to URL-safe base64 string
+ * Required for web-push subscription keys
+ */
+function arrayBufferToUrlSafeBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  // Convert to base64 and make it URL-safe
+  return window.btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
 export function usePushNotifications(): UsePushNotificationsReturn {
   const [permission, setPermission] = useState<PermissionState>('default');
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -116,18 +133,15 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       });
 
       // Send subscription to server
+      // Keys must be URL-safe base64 encoded for web-push
       const response = await fetch('/api/notifications/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           endpoint: subscription.endpoint,
           keys: {
-            p256dh: btoa(
-              String.fromCharCode(...new Uint8Array(subscription.getKey('p256dh')!))
-            ),
-            auth: btoa(
-              String.fromCharCode(...new Uint8Array(subscription.getKey('auth')!))
-            ),
+            p256dh: arrayBufferToUrlSafeBase64(subscription.getKey('p256dh')!),
+            auth: arrayBufferToUrlSafeBase64(subscription.getKey('auth')!),
           },
         }),
       });

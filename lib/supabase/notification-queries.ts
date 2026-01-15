@@ -384,6 +384,36 @@ export async function getBrief(
 }
 
 /**
+ * Check if a notification of a specific type was sent recently for an entity
+ * Used to prevent duplicate notifications (e.g., waiting-on notifications)
+ */
+export async function hasRecentNotification(params: {
+  type: NotificationType;
+  related_entity_type: string;
+  related_entity_id: string;
+  withinDays: number;
+}): Promise<boolean> {
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - params.withinDays);
+
+  const { data, error } = await db
+    .from('notifications')
+    .select('id')
+    .eq('type', params.type)
+    .eq('related_entity_type', params.related_entity_type)
+    .eq('related_entity_id', params.related_entity_id)
+    .gte('created_at', cutoffDate.toISOString())
+    .limit(1);
+
+  if (error) {
+    console.error('Error checking recent notification:', error);
+    return false; // On error, allow notification to be sent
+  }
+
+  return (data?.length ?? 0) > 0;
+}
+
+/**
  * Get recent briefs
  */
 export async function getRecentBriefs(limit: number = 14): Promise<DailyBrief[]> {

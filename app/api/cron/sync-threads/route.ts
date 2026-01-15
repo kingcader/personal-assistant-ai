@@ -31,6 +31,7 @@ import {
 import { upsertEmail } from '@/lib/supabase/task-queries';
 import { fetchMessagesInThreads, parseEmailAddress } from '@/lib/gmail/client';
 import { notify } from '@/lib/notifications/push';
+import { hasRecentNotification } from '@/lib/supabase/notification-queries';
 import type { ThreadParticipant } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -203,17 +204,29 @@ export async function GET(request: NextRequest) {
                 `⏳ Waiting on ${waitingOnEmail} in thread: ${firstEmail.subject} (${daysSinceMyMessage.toFixed(1)} days)`
               );
 
-              // Send push notification for waiting-on detection
+              // Only send notification if we haven't notified about this thread recently (within 3 days)
               try {
-                await notify({
+                const alreadyNotified = await hasRecentNotification({
                   type: 'waiting_on',
-                  title: 'Waiting for Reply',
-                  body: `${waitingOnEmail} hasn't replied to "${firstEmail.subject}" (${Math.floor(daysSinceMyMessage)} days)`,
-                  link: '/waiting-on',
-                  tag: `waiting-on-${thread.id}`,
                   related_entity_type: 'thread',
                   related_entity_id: thread.id,
+                  withinDays: 3,
                 });
+
+                if (!alreadyNotified) {
+                  await notify({
+                    type: 'waiting_on',
+                    title: 'Waiting for Reply',
+                    body: `${waitingOnEmail} hasn't replied to "${firstEmail.subject}" (${Math.floor(daysSinceMyMessage)} days)`,
+                    link: '/waiting-on',
+                    tag: `waiting-on-${thread.id}`,
+                    related_entity_type: 'thread',
+                    related_entity_id: thread.id,
+                  });
+                  console.log(`📬 Sent waiting-on notification for thread: ${firstEmail.subject}`);
+                } else {
+                  console.log(`⏭️ Skipped notification (already sent within 3 days): ${firstEmail.subject}`);
+                }
               } catch (notifyError) {
                 console.error('Failed to send waiting-on notification:', notifyError);
               }
