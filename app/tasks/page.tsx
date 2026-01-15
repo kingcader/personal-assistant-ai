@@ -152,7 +152,8 @@ export default function TasksPage() {
 
   function formatDate(dateString: string | null) {
     if (!dateString) return 'No due date';
-    const date = new Date(dateString);
+    // Add T12:00:00 to prevent timezone issues (date-only strings are parsed as UTC midnight)
+    const date = new Date(dateString + 'T12:00:00');
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
