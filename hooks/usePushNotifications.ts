@@ -115,6 +115,8 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
     try {
       console.log('[Push] Starting subscription process...');
+      console.log('[Push] VAPID Public Key length:', VAPID_PUBLIC_KEY.length);
+      console.log('[Push] VAPID Public Key preview:', VAPID_PUBLIC_KEY.slice(0, 20) + '...' + VAPID_PUBLIC_KEY.slice(-10));
 
       // Check if service worker is supported
       if (!('serviceWorker' in navigator)) {
@@ -150,11 +152,25 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         await existingSub.unsubscribe();
       }
 
+      // Prepare the VAPID public key
+      // The key should already be in URL-safe base64 format from the env var
+      // Convert it to Uint8Array for the pushManager
+      let applicationServerKey: BufferSource;
+      try {
+        applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+        console.log('[Push] Converted key to Uint8Array, length:', (applicationServerKey as Uint8Array).length);
+      } catch (keyError) {
+        console.error('[Push] Error converting VAPID key:', keyError);
+        throw new Error(`Invalid VAPID public key format: ${keyError instanceof Error ? keyError.message : 'Unknown error'}`);
+      }
+
       // Subscribe to push
       console.log('[Push] Creating new push subscription...');
+      console.log('[Push] Using applicationServerKey length:', (applicationServerKey as Uint8Array).length);
+      
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
+        applicationServerKey: applicationServerKey,
       });
       console.log('[Push] Subscription created:', subscription.endpoint.slice(0, 60) + '...');
 
@@ -193,14 +209,25 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     } catch (err) {
       console.error('[Push] ❌ Subscription error:', err);
       const errorMsg = err instanceof Error ? err.message : 'Subscription failed';
+      const errorName = err instanceof Error ? err.name : 'Unknown';
 
-      // Add iOS-specific error messages
-      if (errorMsg.includes('timeout')) {
+      console.error('[Push] Error details:', {
+        name: errorName,
+        message: errorMsg,
+        error: err,
+      });
+
+      // Provide specific error messages for common issues
+      if (errorName === 'AbortError' || errorMsg.includes('push service error')) {
+        setError('VAPID key error: The public key format may be incorrect. Check that NEXT_PUBLIC_VAPID_PUBLIC_KEY matches the server VAPID_PRIVATE_KEY.');
+      } else if (errorMsg.includes('timeout')) {
         setError('Service worker timeout - try refreshing the page');
       } else if (errorMsg.includes('not supported')) {
         setError('Push notifications require iOS 16.4+ and must be added to Home Screen');
-      } else {
+      } else if (errorMsg.includes('Invalid VAPID')) {
         setError(errorMsg);
+      } else {
+        setError(`${errorName}: ${errorMsg}`);
       }
     } finally {
       setIsLoading(false);
