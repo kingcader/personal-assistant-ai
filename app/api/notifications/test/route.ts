@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
         subscriptions_found_before_send: subscriptions.length,
         vapid_configured_after_send: vapidStatus.configured,
         vapid_config_error: vapidStatus.error,
+        vapid_key_processing: vapidStatus.debug,
       },
       ...result,
     });
