@@ -77,6 +77,24 @@ export async function POST(request: NextRequest) {
 
     console.log('📱 Sending test push notification...');
 
+    // Double-check subscriptions before sending
+    if (subscriptions.length === 0) {
+      console.warn('📱 No active subscriptions found!');
+      return NextResponse.json({
+        success: false,
+        error: 'No active push subscriptions found. Please enable push notifications first.',
+        debug: {
+          vapid_public_key_exists: !!vapidPublicKey,
+          vapid_private_key_exists: !!vapidPrivateKey,
+          subscriptions_found: 0,
+        },
+        sent: 0,
+        failed: 0,
+        total: 0,
+        errors: [],
+      });
+    }
+
     const result = await sendTestPush();
 
     console.log('📱 Test push result:', result);

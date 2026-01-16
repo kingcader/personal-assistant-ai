@@ -57,29 +57,61 @@ export default function SettingsPage() {
     setTestStatus(null);
 
     try {
+      // Check if subscribed first
+      if (!isSubscribed) {
+        setTestStatus('Error: Please enable push notifications first before sending a test.');
+        setIsTesting(false);
+        return;
+      }
+
+      console.log('[Test] Sending test notification...');
       const response = await fetch('/api/notifications/test', {
         method: 'POST',
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Test] API error:', response.status, errorText);
+        setTestStatus(`Error: Server returned ${response.status}. ${errorText}`);
+        setIsTesting(false);
+        return;
+      }
+
       const result = await response.json();
+      console.log('[Test] API response:', result);
 
       if (result.success) {
         let status = `Sent: ${result.sent}, Failed: ${result.failed}, Total: ${result.total}`;
 
-        // Show errors if any
+        // Show detailed errors if any
         if (result.errors && result.errors.length > 0) {
-          const errorDetails = result.errors.map((e: any) =>
-            `${e.error || 'Unknown error'}${e.statusCode ? ` (${e.statusCode})` : ''}`
-          ).join('; ');
+          const errorDetails = result.errors.map((e: any) => {
+            let errMsg = e.error || 'Unknown error';
+            if (e.statusCode) errMsg += ` (Status: ${e.statusCode})`;
+            if (e.responseBody) errMsg += ` - ${e.responseBody}`;
+            return errMsg;
+          }).join('; ');
           status += ` | Errors: ${errorDetails}`;
+        }
+
+        // Show debug info if no subscriptions
+        if (result.total === 0) {
+          status += ' | No active subscriptions found. Please enable push notifications.';
+        }
+
+        // Show VAPID config issues
+        if (result.debug && !result.debug.vapid_configured_after_send) {
+          status += ` | VAPID keys not configured properly. ${result.debug.vapid_config_error || ''}`;
         }
 
         setTestStatus(status);
       } else {
-        setTestStatus(`Error: ${result.error}`);
+        setTestStatus(`Error: ${result.error || 'Unknown error occurred'}`);
       }
     } catch (err) {
-      setTestStatus(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      console.error('[Test] Exception:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setTestStatus(`Error: ${errorMessage}. Check browser console for details.`);
     } finally {
       setIsTesting(false);
     }
@@ -224,8 +256,9 @@ export default function SettingsPage() {
               </button>
               <button
                 onClick={handleTestPush}
-                disabled={isTesting || !isSubscribed}
+                disabled={isTesting}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition-colors"
+                title={!isSubscribed ? 'Enable push notifications first' : 'Send a test push notification'}
               >
                 {isTesting ? 'Sending...' : 'Send Test Notification'}
               </button>
