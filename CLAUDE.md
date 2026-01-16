@@ -5,10 +5,10 @@
 Build a **private, persistent AI operating system** for business and daily execution that:
 
 1. **Ingests everything** - Gmail emails + threads + attachments, business documents (contracts, SOPs, pro formas), call transcripts, daily reports, notes/decisions
-2. **Maintains live state** - Tasks, calendar, waiting-on list, active projects/deals/clients/vendors, key people + roles, and a "Current Truth" page representing what is currently true about the business
-3. **Is always chat-available** - Answer questions grounded in stored data with source citations ("What did we decide?", "What does the contract say?", "What's blocking this?")
+2. **Maintains live state** - Tasks, calendar, waiting-on list, active projects/deals/clients/vendors, key people + roles, and a "Current Truth" page representing what is currently true about the business. Monitors its own effectiveness: approval rates, resolution times, patterns
+3. **Is always chat-available** - Answer questions grounded in stored data with source citations ("What did we decide?", "What does the contract say?", "What's blocking this?"). Search is foundational: full-text across emails/tasks/threads, semantic search for natural queries, filtering by person/date/status/priority
 4. **Proposes and prepares execution** - Drafts emails/messages, prepares checklists, agendas, follow-ups. NEVER takes irreversible actions without approval
-5. **Executes with approval gates** - Log what was suggested, what was approved, and what was done. Full auditability.
+5. **Executes with approval gates** - Log what was suggested, what was approved, and what was done. Full auditability. Mistakes are recoverable: rejected suggestions can be reconsidered, cancelled tasks can be restored, activity log shows all actions with undo capability
 
 ## CORE PRINCIPLES (NON-NEGOTIABLES)
 
@@ -17,6 +17,32 @@ Build a **private, persistent AI operating system** for business and daily execu
 - **Approval Gates**: Suggestions and drafts require approval before execution (send email, create event, etc.)
 - **Auditability**: Explicit audit_log table tracks all actions with previous/new state
 - **Incremental Value**: Each loop delivers real, usable functionality
+
+## OPERATIONAL RESILIENCE
+
+The system must be reliable and self-healing:
+- **Graceful Failures**: API failures (Gmail, AI) trigger automatic retry with backoff, not crashes
+- **Partial Progress**: If 1 of 50 emails fails, 49 still succeed and are saved
+- **Degraded Mode**: If external services are down, queue work for later processing
+- **Idempotency**: All operations are safe to retry without side effects
+- **Health Monitoring**: Alerts when processing stalls or errors spike
+
+Outcome: the system recovers gracefully from failures without losing data.
+
+## DATA GOVERNANCE
+
+Data has a lifecycle with clear retention policies:
+- **Active**: Recent emails (<90 days), open tasks, active threads
+- **Archived**: Completed tasks >90 days, resolved threads >90 days (searchable but not in daily views)
+- **Purged**: Audit logs >2 years, notifications >1 year (configurable)
+- **Growth Monitoring**: Storage monitored with alerts at thresholds
+
+Data is never silently lost:
+- **Soft Deletes**: Recovery window before permanent removal
+- **Reconsider**: Rejected suggestions can be moved back to pending
+- **Restore**: Cancelled tasks can be restored within 30 days
+
+Outcome: sustainable long-term storage with no data loss surprises.
 
 ## TECH STACK
 
@@ -74,17 +100,24 @@ Build a **private, persistent AI operating system** for business and daily execu
 - Write to dedicated "AI Assistant" calendar after approval
 
 ### Loop 7 - PLANNED
+**Conversational Interface**
+- Natural language queries against the knowledge base
+- "Where do things stand with X?" returns grounded, cited answers
+- Draft generation through conversation ("write a follow-up to John about Y")
+- Context-aware: assistant knows current tasks, meetings, waiting-on items
+
+### Loop 8 - PLANNED
 **Knowledge Base + RAG**
 - Ingest documents, transcripts, notes
 - Chunk + embed for retrieval
 - Chat with citations
 
-### Loop 8 - PLANNED
+### Loop 9 - PLANNED
 **Current Truth Page**
 - Structured source-of-truth: agreements, pricing, policies, templates
 - Explicit approval for updates
 
-### Loop 9 - PLANNED
+### Loop 10 - PLANNED
 **Long-term Intelligence**
 - Weekly/monthly reflection on patterns, delays, risks
 
