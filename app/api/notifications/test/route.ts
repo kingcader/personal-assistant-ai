@@ -62,6 +62,19 @@ export async function POST(request: NextRequest) {
       console.warn('Test push sent without auth - consider adding security in production');
     }
 
+    // Debug: Check VAPID and subscriptions BEFORE sending
+    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+    const subscriptions = await getActivePushSubscriptions();
+
+    console.log('📱 Debug info before send:', {
+      vapidPublicKeyExists: !!vapidPublicKey,
+      vapidPrivateKeyExists: !!vapidPrivateKey,
+      vapidPublicKeyLength: vapidPublicKey?.length,
+      vapidPrivateKeyLength: vapidPrivateKey?.length,
+      subscriptionCount: subscriptions.length,
+    });
+
     console.log('📱 Sending test push notification...');
 
     const result = await sendTestPush();
@@ -71,6 +84,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Test notification sent',
+      debug: {
+        vapid_public_key_exists: !!vapidPublicKey,
+        vapid_private_key_exists: !!vapidPrivateKey,
+        vapid_public_key_length: vapidPublicKey?.length || 0,
+        vapid_private_key_length: vapidPrivateKey?.length || 0,
+        subscriptions_found_before_send: subscriptions.length,
+      },
       ...result,
     });
   } catch (error) {
