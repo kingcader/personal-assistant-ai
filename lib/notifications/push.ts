@@ -20,12 +20,27 @@ import {
 let vapidConfigured = false;
 let vapidConfigError: string | null = null;
 
+/**
+ * Strip base64 padding and ensure URL-safe format
+ * web-push requires URL-safe base64 WITHOUT padding (no = characters)
+ */
+function toUrlSafeBase64(key: string): string {
+  return key
+    .replace(/\+/g, '-')  // + -> -
+    .replace(/\//g, '_')  // / -> _
+    .replace(/=+$/, '');  // Remove trailing =
+}
+
 function ensureVapidConfigured(): boolean {
   if (vapidConfigured) return true;
 
-  const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+  const VAPID_PUBLIC_KEY_RAW = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const VAPID_PRIVATE_KEY_RAW = process.env.VAPID_PRIVATE_KEY;
   const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:kincaidgarrett@gmail.com';
+
+  // Convert to URL-safe base64 without padding (required by web-push)
+  const VAPID_PUBLIC_KEY = VAPID_PUBLIC_KEY_RAW ? toUrlSafeBase64(VAPID_PUBLIC_KEY_RAW) : undefined;
+  const VAPID_PRIVATE_KEY = VAPID_PRIVATE_KEY_RAW ? toUrlSafeBase64(VAPID_PRIVATE_KEY_RAW) : undefined;
 
   console.log('📱 VAPID config check:', {
     publicKeyExists: !!VAPID_PUBLIC_KEY,
