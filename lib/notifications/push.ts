@@ -85,6 +85,9 @@ export function getVapidStatus(): {
   const VAPID_PUBLIC_KEY_RAW = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const VAPID_PUBLIC_KEY = VAPID_PUBLIC_KEY_RAW ? toUrlSafeBase64(VAPID_PUBLIC_KEY_RAW) : undefined;
 
+  const VAPID_PRIVATE_KEY_RAW = process.env.VAPID_PRIVATE_KEY;
+  const VAPID_PRIVATE_KEY_DBG = VAPID_PRIVATE_KEY_RAW ? toUrlSafeBase64(VAPID_PRIVATE_KEY_RAW) : undefined;
+
   return {
     configured: vapidConfigured,
     error: vapidConfigError,
@@ -93,6 +96,9 @@ export function getVapidStatus(): {
       publicKeyProcessedLength: VAPID_PUBLIC_KEY.length,
       publicKeyLast5: VAPID_PUBLIC_KEY.slice(-5),
       publicKeyHasEquals: VAPID_PUBLIC_KEY.includes('='),
+      privateKeyRawLength: VAPID_PRIVATE_KEY_RAW?.length || 0,
+      privateKeyProcessedLength: VAPID_PRIVATE_KEY_DBG?.length || 0,
+      privateKeyLast3: VAPID_PRIVATE_KEY_DBG?.slice(-3),
     } : undefined,
   };
 }
