@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { sendTestPush } from '@/lib/notifications/push';
+import { sendTestPush, getVapidStatus } from '@/lib/notifications/push';
 import { getActivePushSubscriptions, clearAllPushSubscriptions } from '@/lib/supabase/notification-queries';
 
 export const dynamic = 'force-dynamic';
@@ -81,6 +81,9 @@ export async function POST(request: NextRequest) {
 
     console.log('📱 Test push result:', result);
 
+    // Get VAPID status after attempt
+    const vapidStatus = getVapidStatus();
+
     return NextResponse.json({
       success: true,
       message: 'Test notification sent',
@@ -90,6 +93,8 @@ export async function POST(request: NextRequest) {
         vapid_public_key_length: vapidPublicKey?.length || 0,
         vapid_private_key_length: vapidPrivateKey?.length || 0,
         subscriptions_found_before_send: subscriptions.length,
+        vapid_configured_after_send: vapidStatus.configured,
+        vapid_config_error: vapidStatus.error,
       },
       ...result,
     });

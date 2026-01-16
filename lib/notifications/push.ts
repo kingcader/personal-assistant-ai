@@ -18,6 +18,7 @@ import {
 
 // VAPID configuration - lazy initialization to avoid build-time errors
 let vapidConfigured = false;
+let vapidConfigError: string | null = null;
 
 function ensureVapidConfigured(): boolean {
   if (vapidConfigured) return true;
@@ -26,19 +27,35 @@ function ensureVapidConfigured(): boolean {
   const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
   const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:kincaidgarrett@gmail.com';
 
+  console.log('📱 VAPID config check:', {
+    publicKeyExists: !!VAPID_PUBLIC_KEY,
+    privateKeyExists: !!VAPID_PRIVATE_KEY,
+    publicKeyLength: VAPID_PUBLIC_KEY?.length,
+    privateKeyLength: VAPID_PRIVATE_KEY?.length,
+    subject: VAPID_SUBJECT,
+  });
+
   if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
     try {
       webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
       vapidConfigured = true;
+      console.log('📱 VAPID configured successfully');
       return true;
     } catch (error) {
-      console.error('Failed to configure VAPID:', error);
+      vapidConfigError = error instanceof Error ? error.message : String(error);
+      console.error('📱 Failed to configure VAPID:', vapidConfigError, error);
       return false;
     }
   }
 
-  console.warn('VAPID keys not configured - push notifications disabled');
+  vapidConfigError = 'VAPID keys not found in environment';
+  console.warn('📱 VAPID keys not configured - push notifications disabled');
   return false;
+}
+
+// Export for debugging
+export function getVapidStatus(): { configured: boolean; error: string | null } {
+  return { configured: vapidConfigured, error: vapidConfigError };
 }
 
 /**
