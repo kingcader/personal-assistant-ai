@@ -28,6 +28,14 @@ type DateGroup = {
   tasks: Task[];
 };
 
+type EditingTask = {
+  id: string;
+  title: string;
+  description: string;
+  due_date: string;
+  priority: 'low' | 'med' | 'high';
+};
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +43,8 @@ export default function TasksPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [editingTask, setEditingTask] = useState<EditingTask | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     loadTasks();
@@ -97,6 +107,58 @@ export default function TasksPage() {
         newSet.delete(taskId);
         return newSet;
       });
+    }
+  }
+
+  function openEditModal(task: Task) {
+    setEditingTask({
+      id: task.id,
+      title: task.title,
+      description: task.description || '',
+      due_date: task.due_date || '',
+      priority: task.priority,
+    });
+  }
+
+  function closeEditModal() {
+    setEditingTask(null);
+  }
+
+  async function saveTaskEdits() {
+    if (!editingTask) return;
+
+    setIsSaving(true);
+
+    try {
+      const response = await fetch(`/api/tasks/${editingTask.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editingTask.title,
+          description: editingTask.description || null,
+          due_date: editingTask.due_date || null,
+          priority: editingTask.priority,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update task');
+      }
+
+      const { task: updatedTask } = await response.json();
+
+      setTasks((prev) =>
+        prev.map((t) => (t.id === editingTask.id ? { ...t, ...updatedTask } : t))
+      );
+
+      showToast('Task updated successfully', 'success');
+      closeEditModal();
+    } catch (error) {
+      console.error('Failed to save task edits:', error);
+      showToast(error instanceof Error ? error.message : 'Failed to update task', 'error');
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -356,6 +418,12 @@ export default function TasksPage() {
 
                             {/* Actions */}
                             <div className="flex gap-2 ml-8">
+                              <button
+                                onClick={() => openEditModal(task)}
+                                className="text-xs px-3 py-1.5 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+                              >
+                                Edit
+                              </button>
                               {task.status === 'todo' && (
                                 <button
                                   onClick={() => updateTaskStatus(task.id, 'in_progress')}
@@ -414,6 +482,92 @@ export default function TasksPage() {
           </a>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {editingTask && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Edit Task</h2>
+
+            <div className="space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  value={editingTask.title}
+                  onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Task title"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={editingTask.description}
+                  onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Task description"
+                  rows={3}
+                />
+              </div>
+
+              {/* Due Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Due Date
+                </label>
+                <input
+                  type="date"
+                  value={editingTask.due_date}
+                  onChange={(e) => setEditingTask({ ...editingTask, due_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Priority */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Priority
+                </label>
+                <select
+                  value={editingTask.priority}
+                  onChange={(e) => setEditingTask({ ...editingTask, priority: e.target.value as 'low' | 'med' | 'high' })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="low">Low</option>
+                  <option value="med">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={closeEditModal}
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveTaskEdits}
+                disabled={isSaving || !editingTask.title.trim()}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (

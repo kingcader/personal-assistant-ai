@@ -226,6 +226,43 @@ export async function updateTaskStatus(
 }
 
 /**
+ * Update task fields (title, description, due_date, priority)
+ * Used for editing task details
+ */
+export async function updateTask(
+  taskId: string,
+  updates: {
+    title?: string;
+    description?: string | null;
+    due_date?: string | null;
+    priority?: 'low' | 'med' | 'high';
+  }
+): Promise<Task> {
+  const updateData = {
+    ...updates,
+    updated_at: new Date().toISOString(),
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('tasks')
+    .update(updateData)
+    .eq('id', taskId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update task: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error('Task not found');
+  }
+
+  return data;
+}
+
+/**
  * Get all people (for owner dropdown in edits)
  */
 export async function getAllPeople(): Promise<Person[]> {
