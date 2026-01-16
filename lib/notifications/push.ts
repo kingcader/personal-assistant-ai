@@ -21,11 +21,12 @@ let vapidConfigured = false;
 let vapidConfigError: string | null = null;
 
 /**
- * Strip base64 padding and ensure URL-safe format
+ * Strip base64 padding, whitespace, and ensure URL-safe format
  * web-push requires URL-safe base64 WITHOUT padding (no = characters)
  */
 function toUrlSafeBase64(key: string): string {
   return key
+    .trim()               // Remove leading/trailing whitespace including newlines
     .replace(/\+/g, '-')  // + -> -
     .replace(/\//g, '_')  // / -> _
     .replace(/=+$/, '');  // Remove trailing =
