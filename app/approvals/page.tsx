@@ -20,6 +20,7 @@ export default function ApprovalsPage() {
   const [suggestions, setSuggestions] = useState<PendingSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [edits, setEdits] = useState<EditState>({});
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -44,7 +45,7 @@ export default function ApprovalsPage() {
     setTimeout(() => setToast(null), 3000);
   }
 
-  function updateEdit(suggestionId: string, field: string, value: any) {
+  function updateEdit(suggestionId: string, field: string, value: unknown) {
     setEdits((prev) => ({
       ...prev,
       [suggestionId]: {
@@ -63,20 +64,14 @@ export default function ApprovalsPage() {
       const editedValues = edits[suggestion.id];
       await approveSuggestion(suggestion.id, editedValues);
 
-      // Remove from UI (optimistic update)
       setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
-
-      // Clear edits for this suggestion
       setEdits((prev) => {
         const newEdits = { ...prev };
         delete newEdits[suggestion.id];
         return newEdits;
       });
-
-      const ownerEmail = editedValues?.title
-        ? suggestion.suggested_owner_email
-        : suggestion.suggested_owner_email;
-      showToast(`Task approved and assigned to ${ownerEmail}`, 'success');
+      setExpandedId(null);
+      showToast('Task approved', 'success');
     } catch (error) {
       console.error('Failed to approve suggestion:', error);
       showToast('Failed to approve task', 'error');
@@ -97,20 +92,17 @@ export default function ApprovalsPage() {
     try {
       await rejectSuggestion(suggestionId);
 
-      // Remove from UI (optimistic update)
       setSuggestions((prev) => prev.filter((s) => s.id !== suggestionId));
-
-      // Clear edits for this suggestion
       setEdits((prev) => {
         const newEdits = { ...prev };
         delete newEdits[suggestionId];
         return newEdits;
       });
-
-      showToast('Suggestion rejected', 'success');
+      setExpandedId(null);
+      showToast('Task rejected', 'success');
     } catch (error) {
       console.error('Failed to reject suggestion:', error);
-      showToast('Failed to reject suggestion', 'error');
+      showToast('Failed to reject task', 'error');
     } finally {
       setProcessingIds((prev) => {
         const newSet = new Set(prev);
@@ -120,14 +112,11 @@ export default function ApprovalsPage() {
     }
   }
 
-  function getPriorityColor(priority: 'low' | 'med' | 'high'): string {
+  function getPriorityDot(priority: 'low' | 'med' | 'high'): string {
     switch (priority) {
-      case 'high':
-        return 'bg-red-100 text-red-800 border-red-300';
-      case 'med':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'low':
-        return 'bg-green-100 text-green-800 border-green-300';
+      case 'high': return 'bg-red-500';
+      case 'med': return 'bg-yellow-500';
+      case 'low': return 'bg-blue-400';
     }
   }
 
@@ -145,175 +134,171 @@ export default function ApprovalsPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-lg text-muted-foreground">Loading suggestions...</div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b bg-card">
-        <div className="mx-auto max-w-5xl px-6 py-6">
-          <h1 className="text-3xl font-bold">Task Approvals</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Review AI-generated task suggestions from your emails
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-3xl mx-auto px-4 py-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-gray-900">Task Approvals</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {suggestions.length} suggestion{suggestions.length !== 1 ? 's' : ''} pending
           </p>
         </div>
-      </div>
 
-      {/* Suggestions List */}
-      <div className="mx-auto max-w-5xl px-6 py-8">
+        {/* Suggestions List */}
         {suggestions.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-12 text-center">
-            <p className="text-lg text-muted-foreground">No pending suggestions. All caught up!</p>
+          <div className="text-center py-12">
+            <p className="text-gray-500">All caught up!</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
             {suggestions.map((suggestion) => {
+              const isExpanded = expandedId === suggestion.id;
+              const isProcessing = processingIds.has(suggestion.id);
               const editedTitle = edits[suggestion.id]?.title ?? suggestion.title;
               const editedDueDate = edits[suggestion.id]?.due_date ?? suggestion.suggested_due_date;
               const editedPriority = edits[suggestion.id]?.priority ?? suggestion.priority;
-              const isProcessing = processingIds.has(suggestion.id);
 
               return (
-                <div
-                  key={suggestion.id}
-                  className="rounded-lg border border-border bg-card p-6 shadow-sm transition-shadow hover:shadow-md"
-                >
-                  {/* Email Context */}
-                  <div className="mb-4 flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold text-foreground">
-                        {suggestion.email.subject}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        From {suggestion.email.sender.name || suggestion.email.sender.email} •{' '}
-                        {formatRelativeTime(suggestion.email.received_at)}
-                      </p>
-                    </div>
+                <div key={suggestion.id}>
+                  {/* Compact Row */}
+                  <div
+                    className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => setExpandedId(isExpanded ? null : suggestion.id)}
+                  >
+                    {/* Priority Dot */}
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getPriorityDot(suggestion.priority)}`} />
+
+                    {/* Title */}
+                    <span className="flex-1 text-sm text-gray-900 truncate">
+                      {suggestion.title}
+                    </span>
+
+                    {/* Source */}
+                    <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">
+                      {suggestion.email.sender.name || suggestion.email.sender.email.split('@')[0]}
+                    </span>
+
+                    {/* Time */}
+                    <span className="text-xs text-gray-400 flex-shrink-0">
+                      {formatRelativeTime(suggestion.email.received_at)}
+                    </span>
+
+                    {/* Chevron */}
+                    <svg
+                      className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </div>
 
-                  {/* Task Details */}
-                  <div className="space-y-4">
-                    {/* Title (Editable) */}
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-foreground">
-                        Task Title
-                      </label>
-                      <input
-                        type="text"
-                        value={editedTitle}
-                        onChange={(e) => updateEdit(suggestion.id, 'title', e.target.value)}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        disabled={isProcessing}
-                      />
-                    </div>
-
-                    {/* Why (Read-only) */}
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-foreground">
-                        Reason
-                      </label>
-                      <p className="text-sm text-muted-foreground italic">{suggestion.why}</p>
-                    </div>
-
-                    {/* Due Date & Priority (Editable) */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-foreground">
-                          Due Date
-                        </label>
-                        <input
-                          type="date"
-                          value={editedDueDate || ''}
-                          onChange={(e) =>
-                            updateEdit(suggestion.id, 'due_date', e.target.value || null)
-                          }
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                          disabled={isProcessing}
-                        />
+                  {/* Expanded Content */}
+                  {isExpanded && (
+                    <div className="px-4 pb-4 pt-2 bg-gray-50 border-t border-gray-100">
+                      {/* Email Context */}
+                      <div className="text-xs text-gray-500 mb-3">
+                        <span className="font-medium">From email:</span> {suggestion.email.subject}
                       </div>
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-foreground">
-                          Priority
-                        </label>
-                        <select
-                          value={editedPriority}
-                          onChange={(e) =>
-                            updateEdit(
-                              suggestion.id,
-                              'priority',
-                              e.target.value as 'low' | 'med' | 'high'
-                            )
-                          }
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+
+                      {/* Editable Fields */}
+                      <div className="space-y-3 mb-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Task Title</label>
+                          <input
+                            type="text"
+                            value={editedTitle}
+                            onChange={(e) => updateEdit(suggestion.id, 'title', e.target.value)}
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            disabled={isProcessing}
+                          />
+                        </div>
+
+                        <div className="text-xs text-gray-500 italic">
+                          <span className="font-medium not-italic">Why:</span> {suggestion.why}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Due Date</label>
+                            <input
+                              type="date"
+                              value={editedDueDate || ''}
+                              onChange={(e) => updateEdit(suggestion.id, 'due_date', e.target.value || null)}
+                              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              disabled={isProcessing}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Priority</label>
+                            <select
+                              value={editedPriority}
+                              onChange={(e) => updateEdit(suggestion.id, 'priority', e.target.value as 'low' | 'med' | 'high')}
+                              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              disabled={isProcessing}
+                            >
+                              <option value="low">Low</option>
+                              <option value="med">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-gray-500">
+                          <span className="font-medium">Assigned to:</span> {suggestion.suggested_owner_email}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleApprove(suggestion); }}
                           disabled={isProcessing}
+                          className="text-xs px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                         >
-                          <option value="low">Low</option>
-                          <option value="med">Medium</option>
-                          <option value="high">High</option>
-                        </select>
+                          {isProcessing ? '...' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleReject(suggestion.id); }}
+                          disabled={isProcessing}
+                          className="text-xs px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
                       </div>
                     </div>
-
-                    {/* Owner Email (Read-only for MVP) */}
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-foreground">
-                        Assigned To
-                      </label>
-                      <p className="text-sm text-muted-foreground">
-                        {suggestion.suggested_owner_email}
-                      </p>
-                    </div>
-
-                    {/* Priority Badge */}
-                    <div>
-                      <span
-                        className={`inline-block rounded-full border px-3 py-1 text-xs font-semibold ${getPriorityColor(
-                          editedPriority
-                        )}`}
-                      >
-                        {editedPriority.toUpperCase()} PRIORITY
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="mt-6 flex gap-3">
-                    <button
-                      onClick={() => handleApprove(suggestion)}
-                      disabled={isProcessing}
-                      className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
-                    >
-                      {isProcessing ? 'Processing...' : 'Approve'}
-                    </button>
-                    <button
-                      onClick={() => handleReject(suggestion.id)}
-                      disabled={isProcessing}
-                      className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
-                    >
-                      Reject
-                    </button>
-                  </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
+
+        {/* Navigation */}
+        <div className="mt-8 pt-4 border-t border-gray-200 flex gap-4">
+          <a href="/" className="text-sm text-blue-600 hover:text-blue-800">
+            ← Home
+          </a>
+          <a href="/review" className="text-sm text-blue-600 hover:text-blue-800">
+            Review Queue →
+          </a>
+        </div>
       </div>
 
-      {/* Toast Notification */}
+      {/* Toast */}
       {toast && (
         <div className="fixed bottom-4 right-4 z-50">
-          <div
-            className={`rounded-lg px-6 py-3 shadow-lg ${
-              toast.type === 'success'
-                ? 'bg-green-600 text-white'
-                : 'bg-red-600 text-white'
-            }`}
-          >
+          <div className={`rounded-lg px-4 py-2 shadow-lg text-sm ${
+            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+          }`}>
             {toast.message}
           </div>
         </div>

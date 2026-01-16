@@ -16,6 +16,7 @@ type SnoozeModalState = {
 export default function WaitingOnPage() {
   const [threads, setThreads] = useState<WaitingOnThread[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [snoozeModal, setSnoozeModal] = useState<SnoozeModalState>(null);
@@ -53,7 +54,6 @@ export default function WaitingOnPage() {
 
       await snoozeThread(threadId, snoozeUntil.toISOString());
 
-      // Remove from UI (optimistic update)
       setThreads((prev) => prev.filter((t) => t.id !== threadId));
       setSnoozeModal(null);
       showToast(`Snoozed for ${days} days`, 'success');
@@ -77,8 +77,8 @@ export default function WaitingOnPage() {
     try {
       await resolveThread(threadId, 'manual');
 
-      // Remove from UI (optimistic update)
       setThreads((prev) => prev.filter((t) => t.id !== threadId));
+      setExpandedId(null);
       showToast('Thread resolved', 'success');
     } catch (error) {
       console.error('Failed to resolve thread:', error);
@@ -93,142 +93,205 @@ export default function WaitingOnPage() {
   }
 
   function handleGenerateFollowUp(threadId: string) {
-    // TODO: Navigate to follow-up generation or trigger API
     window.location.href = `/api/follow-ups/generate/${threadId}`;
   }
 
   function getDaysWaitingColor(days: number): string {
-    if (days >= 7) return 'text-red-600 bg-red-50';
-    if (days >= 4) return 'text-orange-600 bg-orange-50';
-    return 'text-yellow-600 bg-yellow-50';
+    if (days >= 7) return 'text-red-600';
+    if (days >= 4) return 'text-orange-500';
+    return 'text-yellow-600';
+  }
+
+  function getDaysWaitingBg(days: number): string {
+    if (days >= 7) return 'bg-red-50';
+    if (days >= 4) return 'bg-orange-50';
+    return 'bg-yellow-50';
   }
 
   function formatLastMessage(preview: string | null): string {
     if (!preview) return 'No preview available';
-    // Truncate to ~150 chars
-    if (preview.length > 150) {
-      return preview.substring(0, 150) + '...';
+    if (preview.length > 200) {
+      return preview.substring(0, 200) + '...';
     }
     return preview;
   }
 
+  // Group threads by urgency
+  function groupThreads(threads: WaitingOnThread[]) {
+    const urgent = threads.filter(t => t.days_waiting >= 7);
+    const moderate = threads.filter(t => t.days_waiting >= 4 && t.days_waiting < 7);
+    const recent = threads.filter(t => t.days_waiting < 4);
+
+    const groups = [];
+    if (urgent.length > 0) groups.push({ key: 'urgent', label: 'Urgent (7+ days)', threads: urgent });
+    if (moderate.length > 0) groups.push({ key: 'moderate', label: 'Needs Attention (4-6 days)', threads: moderate });
+    if (recent.length > 0) groups.push({ key: 'recent', label: 'Recent (2-3 days)', threads: recent });
+
+    return groups;
+  }
+
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-lg text-muted-foreground">Loading waiting-on threads...</div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b bg-card">
-        <div className="mx-auto max-w-5xl px-6 py-6">
-          <h1 className="text-3xl font-bold">Waiting On</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Threads where you sent the last message and haven't received a reply
-          </p>
-          <div className="mt-3 flex gap-2">
-            <span className="inline-flex items-center rounded-full bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-800">
-              {threads.length} thread{threads.length !== 1 ? 's' : ''} waiting
-            </span>
-          </div>
-        </div>
-      </div>
+  const groupedThreads = groupThreads(threads);
 
-      {/* Threads List */}
-      <div className="mx-auto max-w-5xl px-6 py-8">
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-3xl mx-auto px-4 py-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-gray-900">Waiting On</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {threads.length} thread{threads.length !== 1 ? 's' : ''} awaiting reply
+          </p>
+        </div>
+
+        {/* Thread List */}
         {threads.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-12 text-center">
-            <p className="text-lg text-muted-foreground">
-              No threads waiting on replies. All caught up!
-            </p>
+          <div className="text-center py-12">
+            <p className="text-gray-500">All caught up! No threads waiting.</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {threads.map((thread) => {
-              const isProcessing = processingIds.has(thread.id);
-
-              return (
-                <div
-                  key={thread.id}
-                  className="rounded-lg border border-border bg-card p-6 shadow-sm transition-shadow hover:shadow-md"
-                >
-                  {/* Thread Header */}
-                  <div className="mb-4 flex items-start justify-between">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-foreground">
-                        {thread.subject || 'No subject'}
-                      </h3>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                        <span>Waiting on: </span>
-                        <span className="font-medium text-foreground">
-                          {thread.waiting_on_email}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Days Waiting Badge */}
-                    <div
-                      className={`rounded-full px-3 py-1 text-sm font-semibold ${getDaysWaitingColor(
-                        thread.days_waiting
-                      )}`}
-                    >
-                      {thread.days_waiting} day{thread.days_waiting !== 1 ? 's' : ''}
-                    </div>
-                  </div>
-
-                  {/* Last Message Preview */}
-                  <div className="mb-4">
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {formatLastMessage(thread.last_message_preview)}
-                    </p>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={() =>
-                        setSnoozeModal({ threadId: thread.id, subject: thread.subject })
-                      }
-                      disabled={isProcessing}
-                      className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                    >
-                      Snooze
-                    </button>
-                    <button
-                      onClick={() => handleResolve(thread.id)}
-                      disabled={isProcessing}
-                      className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                    >
-                      {isProcessing ? 'Processing...' : 'Resolve'}
-                    </button>
-                    <button
-                      onClick={() => handleGenerateFollowUp(thread.id)}
-                      disabled={isProcessing}
-                      className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                    >
-                      Generate Follow-up
-                    </button>
-                  </div>
+          <div className="space-y-6">
+            {groupedThreads.map((group) => (
+              <div key={group.key}>
+                {/* Group Header */}
+                <div className="flex items-center gap-2 mb-2">
+                  <h2 className={`text-sm font-medium ${
+                    group.key === 'urgent' ? 'text-red-600' :
+                    group.key === 'moderate' ? 'text-orange-600' : 'text-gray-500'
+                  }`}>
+                    {group.label}
+                  </h2>
+                  <span className="text-xs text-gray-400">{group.threads.length}</span>
                 </div>
-              );
-            })}
+
+                {/* Thread Rows */}
+                <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                  {group.threads.map((thread) => {
+                    const isExpanded = expandedId === thread.id;
+                    const isProcessing = processingIds.has(thread.id);
+
+                    return (
+                      <div key={thread.id}>
+                        {/* Compact Row */}
+                        <div
+                          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                          onClick={() => setExpandedId(isExpanded ? null : thread.id)}
+                        >
+                          {/* Days Waiting */}
+                          <div className={`text-xs font-medium px-2 py-1 rounded ${getDaysWaitingBg(thread.days_waiting)} ${getDaysWaitingColor(thread.days_waiting)}`}>
+                            {thread.days_waiting}d
+                          </div>
+
+                          {/* Subject */}
+                          <span className="flex-1 text-sm text-gray-900 truncate">
+                            {thread.subject || 'No subject'}
+                          </span>
+
+                          {/* Waiting On */}
+                          <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">
+                            {thread.waiting_on_email?.split('@')[0]}
+                          </span>
+
+                          {/* Chevron */}
+                          <svg
+                            className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+
+                        {/* Expanded Content */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 pt-2 bg-gray-50 border-t border-gray-100">
+                            {/* Waiting On */}
+                            <div className="text-xs text-gray-500 mb-3">
+                              <span className="font-medium">Waiting on:</span> {thread.waiting_on_email}
+                            </div>
+
+                            {/* Last Message Preview */}
+                            {thread.last_message_preview && (
+                              <div className="mb-4 p-3 bg-white rounded border border-gray-200">
+                                <p className="text-sm text-gray-600">
+                                  {formatLastMessage(thread.last_message_preview)}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Actions */}
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleGenerateFollowUp(thread.id);
+                                }}
+                                disabled={isProcessing}
+                                className="text-xs px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                Generate Follow-up
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSnoozeModal({ threadId: thread.id, subject: thread.subject });
+                                }}
+                                disabled={isProcessing}
+                                className="text-xs px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                              >
+                                Snooze
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResolve(thread.id);
+                                }}
+                                disabled={isProcessing}
+                                className="text-xs px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                              >
+                                {isProcessing ? '...' : 'Resolve'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
+
+        {/* Navigation */}
+        <div className="mt-8 pt-4 border-t border-gray-200 flex gap-4">
+          <a href="/" className="text-sm text-blue-600 hover:text-blue-800">
+            ← Home
+          </a>
+          <a href="/review" className="text-sm text-blue-600 hover:text-blue-800">
+            Review Queue →
+          </a>
+        </div>
       </div>
 
       {/* Snooze Modal */}
       {snoozeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 w-full max-w-md rounded-lg bg-card p-6 shadow-xl">
-            <h2 className="mb-4 text-lg font-semibold">Snooze Thread</h2>
-            <p className="mb-4 text-sm text-muted-foreground">
-              Snooze "{snoozeModal.subject || 'this thread'}" for:
+          <div className="mx-4 w-full max-w-sm rounded-lg bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Snooze Thread</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Snooze for how long?
             </p>
 
-            <div className="mb-6 grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-2 mb-4">
               {[1, 3, 5, 7].map((days) => (
                 <button
                   key={days}
@@ -236,41 +299,39 @@ export default function WaitingOnPage() {
                   className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
                     snoozeDays === days
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-border bg-background text-foreground hover:bg-muted'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                   }`}
                 >
-                  {days} day{days !== 1 ? 's' : ''}
+                  {days}d
                 </button>
               ))}
             </div>
 
-            <div className="flex justify-end gap-3">
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => setSnoozeModal(null)}
-                className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+                className="text-sm px-3 py-1.5 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleSnooze(snoozeModal.threadId, snoozeDays)}
                 disabled={processingIds.has(snoozeModal.threadId)}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {processingIds.has(snoozeModal.threadId) ? 'Snoozing...' : 'Snooze'}
+                {processingIds.has(snoozeModal.threadId) ? '...' : 'Snooze'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Toast Notification */}
+      {/* Toast */}
       {toast && (
         <div className="fixed bottom-4 right-4 z-50">
-          <div
-            className={`rounded-lg px-6 py-3 shadow-lg ${
-              toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-            }`}
-          >
+          <div className={`rounded-lg px-4 py-2 shadow-lg text-sm ${
+            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+          }`}>
             {toast.message}
           </div>
         </div>
