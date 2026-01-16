@@ -155,7 +155,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       // Prepare the VAPID public key
       // The key should already be in URL-safe base64 format from the env var
       // Convert it to Uint8Array for the pushManager
-      let applicationServerKey: BufferSource;
+      let applicationServerKey: Uint8Array;
       try {
         applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
         console.log('[Push] Converted key to Uint8Array, length:', (applicationServerKey as Uint8Array).length);
@@ -170,7 +170,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: applicationServerKey,
+        applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
       });
       console.log('[Push] Subscription created:', subscription.endpoint.slice(0, 60) + '...');
 

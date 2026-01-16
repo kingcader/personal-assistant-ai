@@ -22,16 +22,17 @@ type Task = {
   };
 };
 
-type SortOption = 'due_date' | 'priority' | 'status' | 'created_at';
-
-const PRIORITY_ORDER = { high: 0, med: 1, low: 2 };
-const STATUS_ORDER = { in_progress: 0, todo: 1, completed: 2, cancelled: 3 };
+type DateGroup = {
+  key: string;
+  label: string;
+  tasks: Task[];
+};
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [includeCompleted, setIncludeCompleted] = useState(false);
-  const [sortBy, setSortBy] = useState<SortOption>('due_date');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -75,7 +76,6 @@ export default function TasksPage() {
 
       const { task: updatedTask } = await response.json();
 
-      // Update task in state
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, ...updatedTask } : t))
       );
@@ -83,7 +83,6 @@ export default function TasksPage() {
       const statusLabel = newStatus === 'in_progress' ? 'started' : newStatus;
       showToast(`Task ${statusLabel}`, 'success');
 
-      // If task is completed and we're not showing completed, remove from view
       if (newStatus === 'completed' && !includeCompleted) {
         setTimeout(() => {
           setTasks((prev) => prev.filter((t) => t.id !== taskId));
@@ -101,251 +100,327 @@ export default function TasksPage() {
     }
   }
 
-  function sortTasks(tasks: Task[]): Task[] {
-    return [...tasks].sort((a, b) => {
-      switch (sortBy) {
-        case 'due_date':
-          // Null dates go last
-          if (!a.due_date && !b.due_date) return 0;
-          if (!a.due_date) return 1;
-          if (!b.due_date) return -1;
-          return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
-        case 'priority':
-          return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-        case 'status':
-          return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-        case 'created_at':
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        default:
-          return 0;
-      }
-    });
+  function getDateGroup(dateString: string | null): string {
+    if (!dateString) return 'no_date';
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const taskDate = new Date(dateString + 'T12:00:00');
+    taskDate.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.floor((taskDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) return 'overdue';
+    if (diffDays === 0) return 'today';
+    if (diffDays === 1) return 'tomorrow';
+    if (diffDays <= 7) return 'this_week';
+    return 'later';
   }
 
-  function getPriorityColor(priority: string) {
+  function groupTasksByDate(tasks: Task[]): DateGroup[] {
+    const groups: Record<string, Task[]> = {
+      overdue: [],
+      today: [],
+      tomorrow: [],
+      this_week: [],
+      later: [],
+      no_date: [],
+    };
+
+    tasks.forEach((task) => {
+      const group = getDateGroup(task.due_date);
+      groups[group].push(task);
+    });
+
+    // Sort tasks within each group by priority
+    const priorityOrder = { high: 0, med: 1, low: 2 };
+    Object.values(groups).forEach((group) => {
+      group.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+    });
+
+    const groupLabels: Record<string, string> = {
+      overdue: 'Overdue',
+      today: 'Today',
+      tomorrow: 'Tomorrow',
+      this_week: 'This Week',
+      later: 'Later',
+      no_date: 'No Due Date',
+    };
+
+    return Object.entries(groups)
+      .filter(([, tasks]) => tasks.length > 0)
+      .map(([key, tasks]) => ({
+        key,
+        label: groupLabels[key],
+        tasks,
+      }));
+  }
+
+  function getPriorityDot(priority: string) {
     switch (priority) {
       case 'high':
-        return 'bg-red-100 text-red-800 border-red-200';
+        return 'bg-red-500';
       case 'med':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        return 'bg-yellow-500';
       case 'low':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
+        return 'bg-blue-400';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'bg-gray-400';
     }
   }
 
-  function getStatusColor(status: string) {
-    switch (status) {
-      case 'todo':
-        return 'bg-gray-100 text-gray-800';
-      case 'in_progress':
-        return 'bg-blue-100 text-blue-800';
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  }
-
-  function formatDate(dateString: string | null) {
-    if (!dateString) return 'No due date';
-    // Add T12:00:00 to prevent timezone issues (date-only strings are parsed as UTC midnight)
+  function formatDueDate(dateString: string | null) {
+    if (!dateString) return null;
     const date = new Date(dateString + 'T12:00:00');
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric',
     });
+  }
+
+  function isOverdue(dateString: string | null): boolean {
+    if (!dateString) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const taskDate = new Date(dateString + 'T12:00:00');
+    taskDate.setHours(0, 0, 0, 0);
+    return taskDate < today;
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading tasks...</div>
+        <div className="text-gray-500">Loading tasks...</div>
       </div>
     );
   }
 
-  const sortedTasks = sortTasks(tasks);
+  const groupedTasks = groupTasksByDate(tasks);
+  const totalTasks = tasks.length;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">My Tasks</h1>
-          <p className="text-gray-600">
-            Tasks created from approved email suggestions
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-gray-900">Tasks</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {totalTasks} {totalTasks === 1 ? 'task' : 'tasks'}
           </p>
         </div>
 
-        {/* Filter & Sort Controls */}
-        <div className="mb-6 flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
+        {/* Filter */}
+        <div className="mb-4 flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
             <input
               type="checkbox"
-              id="includeCompleted"
               checked={includeCompleted}
               onChange={(e) => setIncludeCompleted(e.target.checked)}
-              className="rounded border-gray-300"
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
-            <label htmlFor="includeCompleted" className="text-sm text-gray-700">
-              Show completed tasks
-            </label>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label htmlFor="sortBy" className="text-sm text-gray-700">
-              Sort by:
-            </label>
-            <select
-              id="sortBy"
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortOption)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="due_date">Due Date</option>
-              <option value="priority">Priority</option>
-              <option value="status">Status</option>
-              <option value="created_at">Created</option>
-            </select>
-          </div>
+            Show completed
+          </label>
         </div>
 
-        {/* Tasks List */}
-        {sortedTasks.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-12 text-center">
+        {/* Task List */}
+        {groupedTasks.length === 0 ? (
+          <div className="text-center py-12">
             <p className="text-gray-500">
-              {includeCompleted
-                ? 'No tasks found'
-                : 'No active tasks. All caught up!'}
+              {includeCompleted ? 'No tasks found' : 'All caught up!'}
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {sortedTasks.map((task) => {
-              const isProcessing = processingIds.has(task.id);
-
-              return (
-                <div
-                  key={task.id}
-                  className={`bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 ${
-                    task.status === 'completed' ? 'opacity-75' : ''
-                  }`}
-                >
-                  {/* Task Header */}
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className={`text-lg font-semibold text-gray-900 ${
-                      task.status === 'completed' ? 'line-through' : ''
-                    }`}>
-                      {task.title}
-                    </h3>
-                    <div className="flex gap-2">
-                      <span
-                        className={`px-2 py-1 text-xs font-medium rounded ${getPriorityColor(
-                          task.priority
-                        )}`}
-                      >
-                        {task.priority.toUpperCase()}
-                      </span>
-                      <span
-                        className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(
-                          task.status
-                        )}`}
-                      >
-                        {task.status.replace('_', ' ').toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Task Description */}
-                  {task.description && (
-                    <p className="text-gray-600 text-sm mb-3">{task.description}</p>
-                  )}
-
-                  {/* Task Meta */}
-                  <div className="flex flex-wrap gap-4 text-sm text-gray-500 mb-4">
-                    <div className="flex items-center gap-1">
-                      <span className="font-medium">Due:</span>
-                      <span>{formatDate(task.due_date)}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="font-medium">From:</span>
-                      <span>{task.email.subject}</span>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-2">
-                    {/* Start button - visible when todo */}
-                    {task.status === 'todo' && (
-                      <button
-                        onClick={() => updateTaskStatus(task.id, 'in_progress')}
-                        disabled={isProcessing}
-                        className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                      >
-                        {isProcessing ? '...' : 'Start'}
-                      </button>
-                    )}
-
-                    {/* Complete button - visible when todo or in_progress */}
-                    {(task.status === 'todo' || task.status === 'in_progress') && (
-                      <button
-                        onClick={() => updateTaskStatus(task.id, 'completed')}
-                        disabled={isProcessing}
-                        className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
-                      >
-                        {isProcessing ? '...' : 'Complete'}
-                      </button>
-                    )}
-
-                    {/* Reopen button - visible when completed */}
-                    {task.status === 'completed' && (
-                      <button
-                        onClick={() => updateTaskStatus(task.id, 'todo')}
-                        disabled={isProcessing}
-                        className="rounded-md bg-gray-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50"
-                      >
-                        {isProcessing ? '...' : 'Reopen'}
-                      </button>
-                    )}
-                  </div>
+          <div className="space-y-6">
+            {groupedTasks.map((group) => (
+              <div key={group.key}>
+                {/* Group Header */}
+                <div className="flex items-center gap-2 mb-2">
+                  <h2 className={`text-sm font-medium ${
+                    group.key === 'overdue' ? 'text-red-600' : 'text-gray-500'
+                  }`}>
+                    {group.label}
+                  </h2>
+                  <span className="text-xs text-gray-400">
+                    {group.tasks.length}
+                  </span>
                 </div>
-              );
-            })}
+
+                {/* Task Rows */}
+                <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                  {group.tasks.map((task) => {
+                    const isExpanded = expandedId === task.id;
+                    const isProcessing = processingIds.has(task.id);
+                    const overdue = isOverdue(task.due_date);
+
+                    return (
+                      <div key={task.id}>
+                        {/* Compact Row */}
+                        <div
+                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${
+                            task.status === 'completed' ? 'opacity-60' : ''
+                          }`}
+                          onClick={() => setExpandedId(isExpanded ? null : task.id)}
+                        >
+                          {/* Checkbox */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (task.status === 'completed') {
+                                updateTaskStatus(task.id, 'todo');
+                              } else {
+                                updateTaskStatus(task.id, 'completed');
+                              }
+                            }}
+                            disabled={isProcessing}
+                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                              task.status === 'completed'
+                                ? 'bg-green-500 border-green-500 text-white'
+                                : 'border-gray-300 hover:border-gray-400'
+                            } ${isProcessing ? 'opacity-50' : ''}`}
+                          >
+                            {task.status === 'completed' && (
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+
+                          {/* Priority Dot */}
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getPriorityDot(task.priority)}`} />
+
+                          {/* Title */}
+                          <span className={`flex-1 text-sm text-gray-900 truncate ${
+                            task.status === 'completed' ? 'line-through text-gray-500' : ''
+                          }`}>
+                            {task.title}
+                          </span>
+
+                          {/* Status Badge (only for in_progress) */}
+                          {task.status === 'in_progress' && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">
+                              In Progress
+                            </span>
+                          )}
+
+                          {/* Due Date */}
+                          {task.due_date && (
+                            <span className={`text-xs flex-shrink-0 ${
+                              overdue && task.status !== 'completed'
+                                ? 'text-red-600 font-medium'
+                                : 'text-gray-400'
+                            }`}>
+                              {formatDueDate(task.due_date)}
+                            </span>
+                          )}
+
+                          {/* Expand Chevron */}
+                          <svg
+                            className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${
+                              isExpanded ? 'rotate-180' : ''
+                            }`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+
+                        {/* Expanded Details */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 pt-1 bg-gray-50 border-t border-gray-100">
+                            {/* Description */}
+                            {task.description && (
+                              <p className="text-sm text-gray-600 mb-3 ml-8">
+                                {task.description}
+                              </p>
+                            )}
+
+                            {/* Meta Info */}
+                            <div className="text-xs text-gray-500 mb-3 ml-8 space-y-1">
+                              <div>
+                                <span className="font-medium">From email:</span>{' '}
+                                {task.email.subject}
+                              </div>
+                              <div>
+                                <span className="font-medium">Priority:</span>{' '}
+                                <span className={
+                                  task.priority === 'high' ? 'text-red-600' :
+                                  task.priority === 'med' ? 'text-yellow-600' : 'text-blue-600'
+                                }>
+                                  {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex gap-2 ml-8">
+                              {task.status === 'todo' && (
+                                <button
+                                  onClick={() => updateTaskStatus(task.id, 'in_progress')}
+                                  disabled={isProcessing}
+                                  className="text-xs px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                  Start
+                                </button>
+                              )}
+                              {task.status === 'in_progress' && (
+                                <button
+                                  onClick={() => updateTaskStatus(task.id, 'todo')}
+                                  disabled={isProcessing}
+                                  className="text-xs px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                                >
+                                  Pause
+                                </button>
+                              )}
+                              {task.status !== 'completed' && (
+                                <button
+                                  onClick={() => updateTaskStatus(task.id, 'completed')}
+                                  disabled={isProcessing}
+                                  className="text-xs px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                                >
+                                  Complete
+                                </button>
+                              )}
+                              {task.status === 'completed' && (
+                                <button
+                                  onClick={() => updateTaskStatus(task.id, 'todo')}
+                                  disabled={isProcessing}
+                                  className="text-xs px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                                >
+                                  Reopen
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* Navigation Links */}
-        <div className="mt-8 flex gap-4">
-          <a
-            href="/"
-            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-          >
-            ← Back to Home
+        {/* Navigation */}
+        <div className="mt-8 pt-4 border-t border-gray-200 flex gap-4">
+          <a href="/" className="text-sm text-blue-600 hover:text-blue-800">
+            ← Home
           </a>
-          <a
-            href="/approvals"
-            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-          >
-            View Approvals →
+          <a href="/approvals" className="text-sm text-blue-600 hover:text-blue-800">
+            Approvals →
           </a>
         </div>
       </div>
 
-      {/* Toast Notification */}
+      {/* Toast */}
       {toast && (
         <div className="fixed bottom-4 right-4 z-50">
-          <div
-            className={`rounded-lg px-6 py-3 shadow-lg ${
-              toast.type === 'success'
-                ? 'bg-green-600 text-white'
-                : 'bg-red-600 text-white'
-            }`}
-          >
+          <div className={`rounded-lg px-4 py-2 shadow-lg text-sm ${
+            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+          }`}>
             {toast.message}
           </div>
         </div>
