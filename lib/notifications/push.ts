@@ -80,6 +80,9 @@ export function getVapidStatus(): {
     publicKeyProcessedLength: number;
     publicKeyLast5: string;
     publicKeyHasEquals: boolean;
+    privateKeyRawLength: number;
+    privateKeyProcessedLength: number;
+    privateKeyLast3: string | undefined;
   };
 } {
   const VAPID_PUBLIC_KEY_RAW = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
