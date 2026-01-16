@@ -43,10 +43,12 @@ function ensureVapidConfigured(): boolean {
   const VAPID_PRIVATE_KEY = VAPID_PRIVATE_KEY_RAW ? toUrlSafeBase64(VAPID_PRIVATE_KEY_RAW) : undefined;
 
   console.log('📱 VAPID config check:', {
-    publicKeyExists: !!VAPID_PUBLIC_KEY,
-    privateKeyExists: !!VAPID_PRIVATE_KEY,
-    publicKeyLength: VAPID_PUBLIC_KEY?.length,
-    privateKeyLength: VAPID_PRIVATE_KEY?.length,
+    publicKeyRawLength: VAPID_PUBLIC_KEY_RAW?.length,
+    publicKeyProcessedLength: VAPID_PUBLIC_KEY?.length,
+    publicKeyLast5Chars: VAPID_PUBLIC_KEY?.slice(-5),
+    publicKeyHasEquals: VAPID_PUBLIC_KEY?.includes('='),
+    privateKeyRawLength: VAPID_PRIVATE_KEY_RAW?.length,
+    privateKeyProcessedLength: VAPID_PRIVATE_KEY?.length,
     subject: VAPID_SUBJECT,
   });
 
@@ -69,8 +71,29 @@ function ensureVapidConfigured(): boolean {
 }
 
 // Export for debugging
-export function getVapidStatus(): { configured: boolean; error: string | null } {
-  return { configured: vapidConfigured, error: vapidConfigError };
+export function getVapidStatus(): {
+  configured: boolean;
+  error: string | null;
+  debug?: {
+    publicKeyRawLength: number;
+    publicKeyProcessedLength: number;
+    publicKeyLast5: string;
+    publicKeyHasEquals: boolean;
+  };
+} {
+  const VAPID_PUBLIC_KEY_RAW = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const VAPID_PUBLIC_KEY = VAPID_PUBLIC_KEY_RAW ? toUrlSafeBase64(VAPID_PUBLIC_KEY_RAW) : undefined;
+
+  return {
+    configured: vapidConfigured,
+    error: vapidConfigError,
+    debug: VAPID_PUBLIC_KEY ? {
+      publicKeyRawLength: VAPID_PUBLIC_KEY_RAW?.length || 0,
+      publicKeyProcessedLength: VAPID_PUBLIC_KEY.length,
+      publicKeyLast5: VAPID_PUBLIC_KEY.slice(-5),
+      publicKeyHasEquals: VAPID_PUBLIC_KEY.includes('='),
+    } : undefined,
+  };
 }
 
 /**
