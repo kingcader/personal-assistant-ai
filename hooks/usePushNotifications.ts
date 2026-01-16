@@ -20,7 +20,8 @@ interface UsePushNotificationsReturn {
   unsubscribe: () => Promise<void>;
 }
 
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+// Trim whitespace/newlines from VAPID key (env vars can have trailing newlines)
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim();
 
 /**
  * Convert VAPID key from base64 to Uint8Array
