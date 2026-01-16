@@ -126,6 +126,7 @@ export interface SendResult {
   endpoint: string;
   error?: string;
   statusCode?: number;
+  responseBody?: string;  // Response body from push service (contains rejection reason)
 }
 
 /**
@@ -163,9 +164,17 @@ async function sendToSubscription(
     return { success: true, endpoint: endpointPreview };
   } catch (error: unknown) {
     const statusCode = (error as { statusCode?: number })?.statusCode;
+    const body = (error as { body?: string })?.body;
+    const headers = (error as { headers?: Record<string, string> })?.headers;
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    console.error(`📱 Push failed for ${endpointPreview}:`, { statusCode, errorMessage, error });
+    console.error(`📱 Push failed for ${endpointPreview}:`, {
+      statusCode,
+      body,
+      headers,
+      errorMessage,
+      fullError: error
+    });
 
     // Handle expired/invalid subscriptions
     if (statusCode === 404 || statusCode === 410) {
@@ -177,7 +186,8 @@ async function sendToSubscription(
       success: false,
       endpoint: endpointPreview,
       error: errorMessage,
-      statusCode
+      statusCode,
+      responseBody: body,
     };
   }
 }
