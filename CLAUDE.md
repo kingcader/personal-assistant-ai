@@ -84,10 +84,15 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - Notification bell UI with unread count and dropdown
 - `/api/cron/generate-brief` endpoint for scheduled briefs
 
-### Loop 4 - PLANNED
-**Calendar Read + Meeting Prep**
-- Sync Google Calendar (read-only)
-- Generate "prep packets" for meetings: related tasks, emails, suggested agenda
+### Loop 4 - COMPLETED
+**AI-Powered Productivity Calendar**
+- Sync Google Calendar (read-only) with calendar_events table
+- Generate AI "prep packets" for meetings: related tasks, emails, talking points
+- Calendar insights in morning briefs (meeting count, focus time, conflicts)
+- AI scheduling suggestions for tasks based on calendar availability
+- Unified calendar view (list + week grid) showing tasks, events, and suggestions
+- View toggle with localStorage persistence
+- Week navigation for grid view
 
 ### Loop 5 - PLANNED
 **Execution Helpers (Task Workbench)**
@@ -139,6 +144,12 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `notifications` - All notifications with read/push status
 - `push_subscriptions` - Web Push subscriptions for each device
 
+### Loop 4 Tables
+- `calendar_events` - Synced Google Calendar events (by google_event_id)
+- `meeting_prep_packets` - AI-generated meeting prep content (JSONB)
+- `scheduling_suggestions` - AI suggestions for task time blocks
+- `calendar_sync_state` - Track sync progress and tokens
+
 ### Key Views
 - `waiting_on_threads` - Threads I'm waiting on with days_waiting
 - `pending_approvals_count` - Counts for nav badges
@@ -151,14 +162,20 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `app/api/cron/process-emails/route.ts` - Fetch Gmail, extract tasks via AI, send notifications
 - `app/api/cron/sync-threads/route.ts` - Aggregate emails into threads, detect waiting-on, send notifications
 - `app/api/cron/generate-brief/route.ts` - Generate morning/evening briefs with AI
+- `app/api/cron/sync-calendar/route.ts` - Sync Google Calendar events to database (Loop 4)
 - `app/api/notifications/route.ts` - List notifications, mark all read
 - `app/api/notifications/[id]/route.ts` - Mark single notification as read
 - `app/api/notifications/subscribe/route.ts` - Register/remove push subscriptions
 - `app/api/tasks/[id]/route.ts` - Task status updates
+- `app/api/tasks/[id]/schedule/route.ts` - Get/generate scheduling suggestions (Loop 4)
+- `app/api/tasks/schedule/[suggestionId]/accept/route.ts` - Accept scheduling suggestion (Loop 4)
+- `app/api/tasks/schedule/[suggestionId]/dismiss/route.ts` - Dismiss scheduling suggestion (Loop 4)
 - `app/api/follow-ups/route.ts` - List follow-ups
 - `app/api/follow-ups/[id]/route.ts` - Approve/reject follow-ups
 - `app/api/follow-ups/[id]/send/route.ts` - Send approved follow-up via Gmail
 - `app/api/follow-ups/generate/[threadId]/route.ts` - AI generates follow-up draft
+- `app/api/calendar/route.ts` - Unified calendar data API (Loop 4)
+- `app/api/calendar/[eventId]/prep/route.ts` - Get/generate AI prep packets (Loop 4)
 
 ### Pages
 - `app/page.tsx` - Home with navigation
@@ -166,10 +183,15 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `app/tasks/page.tsx` - Task management
 - `app/waiting-on/page.tsx` - Stalled threads list
 - `app/review/page.tsx` - Unified approval queue
+- `app/calendar/page.tsx` - Calendar with list/week views (Loop 4)
 - `app/layout.tsx` - Global layout with PWA meta tags and NotificationBell
 
 ### Components
 - `components/NotificationBell.tsx` - Notification badge and dropdown
+- `components/calendar/CalendarItem.tsx` - Unified calendar item (event/task/suggestion) (Loop 4)
+- `components/calendar/AgendaList.tsx` - Agenda list view (Loop 4)
+- `components/calendar/WeekGrid.tsx` - Week grid view (Loop 4)
+- `components/calendar/PrepPacket.tsx` - AI prep packet display (Loop 4)
 - `hooks/usePushNotifications.ts` - Push subscription management hook
 
 ### Libraries
@@ -178,12 +200,17 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `lib/supabase/thread-queries.ts` - Thread/follow-up queries
 - `lib/supabase/notification-queries.ts` - Notification/brief/subscription queries
 - `lib/supabase/audit-queries.ts` - Audit log queries
+- `lib/supabase/calendar-queries.ts` - Calendar event/prep/scheduling queries (Loop 4)
 - `lib/gmail/client.ts` - Gmail fetch (including fetchMessagesInThreads for sent emails)
 - `lib/gmail/send.ts` - Gmail send
+- `lib/google/auth.ts` - Shared Google OAuth client (Loop 4)
+- `lib/google/calendar.ts` - Google Calendar API functions (Loop 4)
 - `lib/ai/task-extraction-prompt.ts` - AI prompt for tasks
 - `lib/ai/follow-up-prompt.ts` - AI prompt for follow-ups
+- `lib/ai/meeting-prep-prompt.ts` - AI prompt for meeting prep packets (Loop 4)
+- `lib/ai/scheduling-suggestions.ts` - AI scheduling suggestions logic (Loop 4)
 - `lib/notifications/push.ts` - Web Push notification sender
-- `lib/notifications/brief-generator.ts` - AI-powered brief content generation
+- `lib/notifications/brief-generator.ts` - AI-powered brief content generation (+ calendar insights)
 
 ### PWA Files
 - `public/manifest.json` - PWA manifest for installability
@@ -193,6 +220,7 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `supabase/migrations/001_ai_task_schema.sql` - Loop 1 schema
 - `supabase/migrations/002_threads_followups_audit.sql` - Loop 2 schema
 - `supabase/migrations/003_briefs_notifications.sql` - Loop 3 schema
+- `supabase/migrations/005_calendar_schema.sql` - Loop 4 schema (calendar events, prep packets, scheduling)
 
 ## CONFIGURATION
 
@@ -231,18 +259,20 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 
 ## CURRENT STATUS
 
-**Last Updated**: January 14, 2025
+**Last Updated**: January 16, 2025
 
 - Loop 1: COMPLETE - Email → Tasks working
 - Loop 2: COMPLETE - Waiting-on detection with sent emails working
 - Loop 3: COMPLETE - Daily briefs + push notifications
-- Migration 003: APPLIED to Supabase
+- Loop 4: COMPLETE - AI-Powered Productivity Calendar
+- Migration 005: NEEDS TO BE APPLIED to Supabase
 - Deployment: LIVE at https://personal-assistant-ai-lime.vercel.app
 - Cron Jobs (cron-job.org):
   - process-emails: every 1 min
   - sync-threads: set up by user
   - generate-brief (morning): 0 13 * * * (7 AM Costa Rica)
   - generate-brief (evening): 0 2 * * * (8 PM Costa Rica)
+  - sync-calendar: every 15 min (NEEDS SETUP)
 
 ## CRON JOB SETUP
 
@@ -253,12 +283,14 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 | Sync Threads | `https://personal-assistant-ai-lime.vercel.app/api/cron/sync-threads` | User configured | - |
 | Morning Brief | `https://personal-assistant-ai-lime.vercel.app/api/cron/generate-brief?type=morning` | `0 13 * * *` | 7:00 AM |
 | Evening Brief | `https://personal-assistant-ai-lime.vercel.app/api/cron/generate-brief?type=evening` | `0 2 * * *` | 8:00 PM |
+| Sync Calendar | `https://personal-assistant-ai-lime.vercel.app/api/cron/sync-calendar` | Every 15 min | - |
 
 All cron jobs require `Authorization: Bearer {CRON_SECRET}` header.
 
 ## NEXT STEPS
 
-1. Set up cron jobs for generate-brief on cron-job.org
-2. Test PWA installation on phone and desktop
-3. Test push notifications work when app is in background
-4. Move to Loop 4 (Calendar integration)
+1. Apply migration 005 to Supabase for calendar tables
+2. Re-authorize Google OAuth with calendar.readonly scope (may need new refresh token)
+3. Set up sync-calendar cron job on cron-job.org (every 15 min)
+4. Test calendar sync and prep packet generation
+5. Move to Loop 5 (Execution Helpers / Task Workbench)
