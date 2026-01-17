@@ -94,6 +94,16 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - View toggle with localStorage persistence
 - Week navigation for grid view
 
+### Loop 4.5 - COMPLETED
+**Calendar Enhancements**
+- Google Calendar write access (create/update/delete events)
+- Task scheduling with drag-drop from sidebar to week grid
+- Unscheduled tasks sidebar in week view
+- Create Event and Create Task modals
+- Reminder system with push notifications (5min, 15min, 30min, 1hr, 1day before)
+- Unschedule button to remove task from calendar while keeping the task
+- `/api/cron/send-reminders` endpoint (runs every 5 minutes)
+
 ### Loop 5 - PLANNED
 **Execution Helpers (Task Workbench)**
 - Per-task AI actions: draft reply, create checklist, suggest next actions

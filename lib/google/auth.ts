@@ -14,6 +14,7 @@ export const GOOGLE_SCOPES = {
   GMAIL_READONLY: 'https://www.googleapis.com/auth/gmail.readonly',
   GMAIL_SEND: 'https://www.googleapis.com/auth/gmail.send',
   CALENDAR_READONLY: 'https://www.googleapis.com/auth/calendar.readonly',
+  CALENDAR_EVENTS: 'https://www.googleapis.com/auth/calendar.events',
 };
 
 /**
@@ -47,7 +48,7 @@ export function getRequiredScopes(): string[] {
   return [
     GOOGLE_SCOPES.GMAIL_READONLY,
     GOOGLE_SCOPES.GMAIL_SEND,
-    GOOGLE_SCOPES.CALENDAR_READONLY,
+    GOOGLE_SCOPES.CALENDAR_EVENTS, // Full calendar access (read + write)
   ];
 }
 

@@ -584,3 +584,329 @@ export async function updateSyncStateError(
 
   if (error) throw error;
 }
+
+// ============================================
+// TASK SCHEDULING
+// ============================================
+
+export interface ScheduledTask {
+  id: string;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  priority: 'low' | 'med' | 'high';
+  status: 'todo' | 'in_progress' | 'completed' | 'cancelled';
+  scheduled_start: string;
+  scheduled_end: string;
+  is_scheduled: boolean;
+  email_subject: string | null;
+}
+
+export interface UnscheduledTask {
+  id: string;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  priority: 'low' | 'med' | 'high';
+  status: 'todo' | 'in_progress' | 'completed' | 'cancelled';
+  email_subject: string | null;
+  created_at: string;
+}
+
+/**
+ * Get scheduled tasks (tasks with time blocks)
+ */
+export async function getScheduledTasks(
+  startDate?: Date,
+  endDate?: Date
+): Promise<ScheduledTask[]> {
+  let query = supabase
+    .from('tasks')
+    .select(`
+      id,
+      title,
+      description,
+      due_date,
+      priority,
+      status,
+      scheduled_start,
+      scheduled_end,
+      is_scheduled,
+      emails (subject)
+    `)
+    .eq('is_scheduled', true)
+    .not('status', 'in', '("completed","cancelled")')
+    .order('scheduled_start', { ascending: true });
+
+  if (startDate) {
+    query = query.gte('scheduled_start', startDate.toISOString());
+  }
+  if (endDate) {
+    query = query.lte('scheduled_start', endDate.toISOString());
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+
+  return (data || []).map((t: any) => ({
+    ...t,
+    email_subject: t.emails?.subject || null,
+    emails: undefined,
+  }));
+}
+
+/**
+ * Get unscheduled tasks (tasks without time blocks)
+ */
+export async function getUnscheduledTasks(): Promise<UnscheduledTask[]> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select(`
+      id,
+      title,
+      description,
+      due_date,
+      priority,
+      status,
+      created_at,
+      emails (subject)
+    `)
+    .or('is_scheduled.is.null,is_scheduled.eq.false')
+    .not('status', 'in', '("completed","cancelled")')
+    .order('priority', { ascending: true })
+    .order('due_date', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+
+  return (data || []).map((t: any) => ({
+    ...t,
+    email_subject: t.emails?.subject || null,
+    emails: undefined,
+  }));
+}
+
+/**
+ * Schedule a task to a time block
+ */
+export async function scheduleTask(
+  taskId: string,
+  scheduledStart: Date,
+  scheduledEnd: Date
+): Promise<ScheduledTask> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .update({
+      scheduled_start: scheduledStart.toISOString(),
+      scheduled_end: scheduledEnd.toISOString(),
+      is_scheduled: true,
+    } as never)
+    .eq('id', taskId)
+    .select(`
+      id,
+      title,
+      description,
+      due_date,
+      priority,
+      status,
+      scheduled_start,
+      scheduled_end,
+      is_scheduled,
+      emails (subject)
+    `)
+    .single();
+
+  if (error) throw error;
+  if (!data) throw new Error('Task not found');
+
+  const taskData = data as any;
+  return {
+    id: taskData.id,
+    title: taskData.title,
+    description: taskData.description,
+    due_date: taskData.due_date,
+    priority: taskData.priority,
+    status: taskData.status,
+    scheduled_start: taskData.scheduled_start,
+    scheduled_end: taskData.scheduled_end,
+    is_scheduled: taskData.is_scheduled,
+    email_subject: taskData.emails?.subject || null,
+  } as ScheduledTask;
+}
+
+/**
+ * Unschedule a task (remove from calendar but keep task)
+ */
+export async function unscheduleTask(taskId: string): Promise<void> {
+  const { error } = await supabase
+    .from('tasks')
+    .update({
+      scheduled_start: null,
+      scheduled_end: null,
+      is_scheduled: false,
+    } as never)
+    .eq('id', taskId);
+
+  if (error) throw error;
+}
+
+/**
+ * Reschedule a task to a new time block
+ */
+export async function rescheduleTask(
+  taskId: string,
+  newStart: Date,
+  newEnd: Date
+): Promise<ScheduledTask> {
+  return scheduleTask(taskId, newStart, newEnd);
+}
+
+// ============================================
+// REMINDERS
+// ============================================
+
+export interface Reminder {
+  id: string;
+  entity_type: 'task' | 'event';
+  task_id: string | null;
+  event_id: string | null;
+  minutes_before: number;
+  remind_at: string;
+  status: 'pending' | 'sent' | 'dismissed';
+  sent_at: string | null;
+  dismissed_at: string | null;
+  created_at: string;
+}
+
+export interface ReminderWithEntity extends Reminder {
+  entity_title: string | null;
+  entity_start_time: string | null;
+}
+
+/**
+ * Create a reminder for a task or event
+ */
+export async function createReminder(
+  entityType: 'task' | 'event',
+  entityId: string,
+  minutesBefore: number,
+  entityStartTime: Date
+): Promise<Reminder> {
+  // Calculate remind_at time
+  const remindAt = new Date(entityStartTime.getTime() - minutesBefore * 60 * 1000);
+
+  const reminderData: any = {
+    entity_type: entityType,
+    minutes_before: minutesBefore,
+    remind_at: remindAt.toISOString(),
+  };
+
+  if (entityType === 'task') {
+    reminderData.task_id = entityId;
+  } else {
+    reminderData.event_id = entityId;
+  }
+
+  const { data, error } = await supabase
+    .from('reminders')
+    .insert(reminderData as never)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as Reminder;
+}
+
+/**
+ * Get reminders for a specific entity
+ */
+export async function getRemindersForEntity(
+  entityType: 'task' | 'event',
+  entityId: string
+): Promise<Reminder[]> {
+  const column = entityType === 'task' ? 'task_id' : 'event_id';
+
+  const { data, error } = await supabase
+    .from('reminders')
+    .select('*')
+    .eq(column, entityId)
+    .order('remind_at', { ascending: true });
+
+  if (error) throw error;
+  return data as Reminder[];
+}
+
+/**
+ * Get due reminders (pending and ready to send)
+ */
+export async function getDueReminders(): Promise<ReminderWithEntity[]> {
+  const now = new Date();
+
+  const { data, error } = await supabase
+    .from('reminders')
+    .select(`
+      *,
+      tasks (title, scheduled_start),
+      calendar_events (summary, start_time)
+    `)
+    .eq('status', 'pending')
+    .lte('remind_at', now.toISOString())
+    .order('remind_at', { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map((r: any) => ({
+    ...r,
+    entity_title: r.entity_type === 'task'
+      ? r.tasks?.title
+      : r.calendar_events?.summary,
+    entity_start_time: r.entity_type === 'task'
+      ? r.tasks?.scheduled_start
+      : r.calendar_events?.start_time,
+    tasks: undefined,
+    calendar_events: undefined,
+  }));
+}
+
+/**
+ * Mark reminder as sent
+ */
+export async function markReminderSent(reminderId: string): Promise<void> {
+  const { error } = await supabase
+    .from('reminders')
+    .update({
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+    } as never)
+    .eq('id', reminderId);
+
+  if (error) throw error;
+}
+
+/**
+ * Dismiss a reminder
+ */
+export async function dismissReminder(reminderId: string): Promise<void> {
+  const { error } = await supabase
+    .from('reminders')
+    .update({
+      status: 'dismissed',
+      dismissed_at: new Date().toISOString(),
+    } as never)
+    .eq('id', reminderId);
+
+  if (error) throw error;
+}
+
+/**
+ * Delete a reminder
+ */
+export async function deleteReminder(reminderId: string): Promise<void> {
+  const { error } = await supabase
+    .from('reminders')
+    .delete()
+    .eq('id', reminderId);
+
+  if (error) throw error;
+}

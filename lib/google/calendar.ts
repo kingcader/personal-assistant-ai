@@ -332,3 +332,167 @@ export async function findAvailableSlots(
 
   return availableSlots;
 }
+
+// ============================================
+// WRITE OPERATIONS (requires calendar.events scope)
+// ============================================
+
+/**
+ * Input for creating/updating a calendar event
+ */
+export interface CalendarEventInput {
+  summary: string;
+  description?: string | null;
+  startTime: Date;
+  endTime: Date;
+  allDay?: boolean;
+  location?: string | null;
+  attendees?: string[]; // Email addresses
+}
+
+/**
+ * Create a new event in Google Calendar
+ */
+export async function createCalendarEvent(
+  eventInput: CalendarEventInput,
+  calendarId: string = 'primary'
+): Promise<CalendarEvent> {
+  const calendar = getCalendarClient();
+
+  const eventBody: calendar_v3.Schema$Event = {
+    summary: eventInput.summary,
+    description: eventInput.description || undefined,
+    location: eventInput.location || undefined,
+  };
+
+  // Set start/end time based on all-day flag
+  if (eventInput.allDay) {
+    const startDate = eventInput.startTime.toISOString().split('T')[0];
+    const endDate = eventInput.endTime.toISOString().split('T')[0];
+    eventBody.start = { date: startDate };
+    eventBody.end = { date: endDate };
+  } else {
+    eventBody.start = { dateTime: eventInput.startTime.toISOString() };
+    eventBody.end = { dateTime: eventInput.endTime.toISOString() };
+  }
+
+  // Add attendees if provided
+  if (eventInput.attendees && eventInput.attendees.length > 0) {
+    eventBody.attendees = eventInput.attendees.map((email) => ({ email }));
+  }
+
+  const response = await calendar.events.insert({
+    calendarId,
+    requestBody: eventBody,
+    sendUpdates: 'all', // Send invites to attendees
+  });
+
+  const created = parseGoogleEvent(response.data);
+  if (!created) {
+    throw new Error('Failed to parse created event');
+  }
+
+  return created;
+}
+
+/**
+ * Update an existing event in Google Calendar
+ */
+export async function updateCalendarEvent(
+  eventId: string,
+  eventInput: Partial<CalendarEventInput>,
+  calendarId: string = 'primary'
+): Promise<CalendarEvent> {
+  const calendar = getCalendarClient();
+
+  // First, get the existing event
+  const existingResponse = await calendar.events.get({
+    calendarId,
+    eventId,
+  });
+
+  const existingEvent = existingResponse.data;
+
+  // Build update payload
+  const eventBody: calendar_v3.Schema$Event = {
+    summary: eventInput.summary ?? existingEvent.summary,
+    description: eventInput.description !== undefined ? (eventInput.description || undefined) : existingEvent.description,
+    location: eventInput.location !== undefined ? (eventInput.location || undefined) : existingEvent.location,
+  };
+
+  // Update start/end times if provided
+  if (eventInput.startTime !== undefined || eventInput.endTime !== undefined || eventInput.allDay !== undefined) {
+    const allDay = eventInput.allDay ?? !!existingEvent.start?.date;
+    const startTime = eventInput.startTime ?? new Date(existingEvent.start?.dateTime || existingEvent.start?.date || '');
+    const endTime = eventInput.endTime ?? new Date(existingEvent.end?.dateTime || existingEvent.end?.date || '');
+
+    if (allDay) {
+      eventBody.start = { date: startTime.toISOString().split('T')[0] };
+      eventBody.end = { date: endTime.toISOString().split('T')[0] };
+    } else {
+      eventBody.start = { dateTime: startTime.toISOString() };
+      eventBody.end = { dateTime: endTime.toISOString() };
+    }
+  } else {
+    // Keep existing times
+    eventBody.start = existingEvent.start;
+    eventBody.end = existingEvent.end;
+  }
+
+  // Update attendees if provided
+  if (eventInput.attendees !== undefined) {
+    eventBody.attendees = eventInput.attendees.map((email) => ({ email }));
+  } else {
+    eventBody.attendees = existingEvent.attendees;
+  }
+
+  const response = await calendar.events.update({
+    calendarId,
+    eventId,
+    requestBody: eventBody,
+    sendUpdates: 'all',
+  });
+
+  const updated = parseGoogleEvent(response.data);
+  if (!updated) {
+    throw new Error('Failed to parse updated event');
+  }
+
+  return updated;
+}
+
+/**
+ * Delete an event from Google Calendar
+ */
+export async function deleteCalendarEvent(
+  eventId: string,
+  calendarId: string = 'primary'
+): Promise<void> {
+  const calendar = getCalendarClient();
+
+  await calendar.events.delete({
+    calendarId,
+    eventId,
+    sendUpdates: 'all', // Notify attendees of cancellation
+  });
+}
+
+/**
+ * Move/reschedule an event to a new time
+ * Convenience method for updating just the time
+ */
+export async function rescheduleCalendarEvent(
+  eventId: string,
+  newStartTime: Date,
+  newEndTime: Date,
+  calendarId: string = 'primary'
+): Promise<CalendarEvent> {
+  return updateCalendarEvent(
+    eventId,
+    {
+      startTime: newStartTime,
+      endTime: newEndTime,
+    },
+    calendarId
+  );
+}

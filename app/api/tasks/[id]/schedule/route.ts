@@ -1,13 +1,21 @@
 /**
  * Task Scheduling API
  *
- * Get or generate scheduling suggestions for a specific task
+ * GET - Get existing scheduling suggestions for a task
+ * POST - Generate new scheduling suggestions
+ * PUT - Schedule task to a specific time block
+ * DELETE - Unschedule task (remove from calendar, keep task)
  *
  * Part of Loop #4: AI-Powered Productivity Calendar
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSchedulingSuggestionsForTask } from '@/lib/supabase/calendar-queries';
+import {
+  getSchedulingSuggestionsForTask,
+  scheduleTask,
+  unscheduleTask,
+  rescheduleTask,
+} from '@/lib/supabase/calendar-queries';
 import {
   generateSchedulingSuggestions,
   saveSchedulingSuggestions,
@@ -121,6 +129,119 @@ export async function POST(request: NextRequest, context: RouteContext) {
     console.error('Error generating scheduling suggestions:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PUT /api/tasks/[id]/schedule
+ *
+ * Schedule or reschedule a task to a specific time block
+ *
+ * Body: { scheduled_start: ISO string, scheduled_end: ISO string }
+ */
+export async function PUT(request: NextRequest, context: RouteContext) {
+  try {
+    const { id: taskId } = await context.params;
+    const body = await request.json();
+
+    const { scheduled_start, scheduled_end } = body;
+
+    if (!scheduled_start || !scheduled_end) {
+      return NextResponse.json(
+        { error: 'scheduled_start and scheduled_end are required' },
+        { status: 400 }
+      );
+    }
+
+    const startTime = new Date(scheduled_start);
+    const endTime = new Date(scheduled_end);
+
+    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+      return NextResponse.json(
+        { error: 'Invalid date format' },
+        { status: 400 }
+      );
+    }
+
+    if (endTime <= startTime) {
+      return NextResponse.json(
+        { error: 'End time must be after start time' },
+        { status: 400 }
+      );
+    }
+
+    // Check if task exists
+    const { data: task, error: taskError } = await supabase
+      .from('tasks')
+      .select('id, status')
+      .eq('id', taskId)
+      .single<{ id: string; status: string }>();
+
+    if (taskError || !task) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    }
+
+    if (task.status === 'completed' || task.status === 'cancelled') {
+      return NextResponse.json(
+        { error: 'Cannot schedule completed or cancelled tasks' },
+        { status: 400 }
+      );
+    }
+
+    const scheduledTask = await scheduleTask(taskId, startTime, endTime);
+
+    return NextResponse.json({
+      success: true,
+      task: scheduledTask,
+    });
+  } catch (error) {
+    console.error('Error scheduling task:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to schedule task' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/tasks/[id]/schedule
+ *
+ * Unschedule a task (remove from calendar, keep task)
+ */
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  try {
+    const { id: taskId } = await context.params;
+
+    // Check if task exists
+    const { data: task, error: taskError } = await supabase
+      .from('tasks')
+      .select('id, is_scheduled')
+      .eq('id', taskId)
+      .single<{ id: string; is_scheduled: boolean }>();
+
+    if (taskError || !task) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    }
+
+    if (!task.is_scheduled) {
+      return NextResponse.json(
+        { error: 'Task is not scheduled' },
+        { status: 400 }
+      );
+    }
+
+    await unscheduleTask(taskId);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Task unscheduled',
+    });
+  } catch (error) {
+    console.error('Error unscheduling task:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to unschedule task' },
       { status: 500 }
     );
   }

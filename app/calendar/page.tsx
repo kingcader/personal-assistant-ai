@@ -1,9 +1,13 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { DndContext, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import AgendaList from '@/components/calendar/AgendaList';
 import WeekGrid, { WeekGridEvent } from '@/components/calendar/WeekGrid';
 import PrepPacket, { PrepPacketData } from '@/components/calendar/PrepPacket';
+import UnscheduledSidebar, { UnscheduledTask } from '@/components/calendar/UnscheduledSidebar';
+import CreateEventModal from '@/components/calendar/CreateEventModal';
+import CreateTaskModal from '@/components/calendar/CreateTaskModal';
 import { CalendarItemProps } from '@/components/calendar/CalendarItem';
 
 interface CalendarTask {
@@ -14,6 +18,9 @@ interface CalendarTask {
   priority: 'low' | 'med' | 'high';
   status: 'todo' | 'in_progress' | 'completed' | 'cancelled';
   email_subject: string | null;
+  scheduled_start?: string | null;
+  scheduled_end?: string | null;
+  is_scheduled?: boolean;
 }
 
 interface CalendarEvent {
@@ -50,11 +57,11 @@ export default function CalendarPage() {
   const [tasks, setTasks] = useState<CalendarTask[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [suggestions, setSuggestions] = useState<SchedulingSuggestion[]>([]);
+  const [unscheduledTasks, setUnscheduledTasks] = useState<UnscheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    // Load from localStorage on initial render
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('calendarViewMode') as ViewMode) || 'list';
     }
@@ -71,6 +78,16 @@ export default function CalendarPage() {
   const [prepPacket, setPrepPacket] = useState<PrepPacketData | null>(null);
   const [loadingPrep, setLoadingPrep] = useState(false);
   const [regeneratingPrep, setRegeneratingPrep] = useState(false);
+
+  // Sidebar visibility
+  const [showSidebar, setShowSidebar] = useState(true);
+
+  // Modals
+  const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+
+  // Drag state
+  const [activeDragItem, setActiveDragItem] = useState<any>(null);
 
   // Date range - 14 days from today
   const [startDate] = useState(() => {
@@ -117,9 +134,27 @@ export default function CalendarPage() {
     }
   }, [startDate, endDate, showToast]);
 
+  const loadUnscheduledTasks = useCallback(async () => {
+    try {
+      const response = await fetch('/api/tasks?scheduled=false&limit=100');
+      if (!response.ok) {
+        throw new Error('Failed to load unscheduled tasks');
+      }
+      const data = await response.json();
+      setUnscheduledTasks(
+        (data.tasks || []).filter(
+          (t: any) => t.status !== 'completed' && t.status !== 'cancelled'
+        )
+      );
+    } catch (err) {
+      console.error('Failed to load unscheduled tasks:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadCalendarData();
-  }, [loadCalendarData]);
+    loadUnscheduledTasks();
+  }, [loadCalendarData, loadUnscheduledTasks]);
 
   // Load prep packet
   const loadPrepPacket = useCallback(async (eventId: string, regenerate: boolean = false) => {
@@ -140,7 +175,6 @@ export default function CalendarPage() {
       const data = await response.json();
       setPrepPacket(data.prep_packet);
 
-      // Update event's has_prep_packet status
       setEvents((prev) =>
         prev.map((e) =>
           e.id === eventId ? { ...e, has_prep_packet: true, prep_packet_id: data.prep_packet.id } : e
@@ -185,6 +219,7 @@ export default function CalendarPage() {
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status: 'completed' } : t))
       );
+      setUnscheduledTasks((prev) => prev.filter((t) => t.id !== taskId));
       showToast('Task completed', 'success');
     } catch {
       showToast('Failed to complete task', 'error');
@@ -223,6 +258,38 @@ export default function CalendarPage() {
     }
   }, [showToast]);
 
+  const handleUnscheduleTask = useCallback(async (taskId: string) => {
+    setProcessingIds((prev) => new Set(prev).add(taskId));
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/schedule`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to unschedule task');
+
+      // Update task in local state
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, is_scheduled: false, scheduled_start: null, scheduled_end: null }
+            : t
+        )
+      );
+
+      // Reload unscheduled tasks to include this one
+      loadUnscheduledTasks();
+      showToast('Task unscheduled', 'success');
+    } catch {
+      showToast('Failed to unschedule task', 'error');
+    } finally {
+      setProcessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+    }
+  }, [showToast, loadUnscheduledTasks]);
+
   // Suggestion actions
   const handleAcceptSuggestion = useCallback(async (suggestionId: string) => {
     setProcessingIds((prev) => new Set(prev).add(suggestionId));
@@ -236,6 +303,7 @@ export default function CalendarPage() {
       setSuggestions((prev) =>
         prev.filter((s) => s.id !== suggestionId)
       );
+      loadCalendarData();
       showToast('Suggestion accepted', 'success');
     } catch {
       showToast('Failed to accept suggestion', 'error');
@@ -246,7 +314,7 @@ export default function CalendarPage() {
         return next;
       });
     }
-  }, [showToast]);
+  }, [showToast, loadCalendarData]);
 
   const handleDismissSuggestion = useCallback(async (suggestionId: string) => {
     setProcessingIds((prev) => new Set(prev).add(suggestionId));
@@ -272,13 +340,67 @@ export default function CalendarPage() {
     }
   }, [showToast]);
 
+  // Schedule task via drag-drop
+  const handleScheduleTask = useCallback(async (
+    taskId: string,
+    dayKey: string,
+    hour: number
+  ) => {
+    try {
+      const startDateTime = new Date(dayKey + 'T00:00:00');
+      startDateTime.setHours(hour, 0, 0, 0);
+      const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour default
+
+      const response = await fetch(`/api/tasks/${taskId}/schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduled_start: startDateTime.toISOString(),
+          scheduled_end: endDateTime.toISOString(),
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to schedule task');
+
+      // Remove from unscheduled tasks
+      setUnscheduledTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+      // Reload calendar data to show the scheduled task
+      loadCalendarData();
+      showToast('Task scheduled', 'success');
+    } catch {
+      showToast('Failed to schedule task', 'error');
+    }
+  }, [showToast, loadCalendarData]);
+
+  // Drag handlers
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveDragItem(event.active.data.current);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setActiveDragItem(null);
+
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeData = active.data.current;
+    const overData = over.data.current;
+
+    // Dropping a task on a time slot
+    if (activeData?.type === 'task' && overData?.type === 'time-slot') {
+      const taskId = activeData.task.id;
+      const { dayKey, hour } = overData;
+      handleScheduleTask(taskId, dayKey, hour);
+    }
+  }, [handleScheduleTask]);
+
   // Build calendar days
   const buildCalendarDays = useCallback(() => {
     const days: { date: Date; label: string; items: CalendarItemProps[] }[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Group items by day
     const dayMap = new Map<string, CalendarItemProps[]>();
 
     // Add events
@@ -306,26 +428,45 @@ export default function CalendarPage() {
         });
     }
 
-    // Add tasks
+    // Add tasks (both scheduled and unscheduled with due dates)
     if (viewFilter === 'all' || viewFilter === 'tasks') {
       tasks
         .filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
         .forEach((task) => {
-          const taskDate = task.due_date ? new Date(task.due_date + 'T12:00:00') : new Date();
-          taskDate.setHours(0, 0, 0, 0);
-          const key = taskDate.toISOString().split('T')[0];
+          // Use scheduled time if available, otherwise due date
+          let taskDate: Date;
+          let taskStartTime: Date;
+          let taskEndTime: Date | undefined;
+          let isAllDay = true;
 
+          if (task.is_scheduled && task.scheduled_start) {
+            taskStartTime = new Date(task.scheduled_start);
+            taskEndTime = task.scheduled_end ? new Date(task.scheduled_end) : undefined;
+            taskDate = new Date(taskStartTime);
+            taskDate.setHours(0, 0, 0, 0);
+            isAllDay = false;
+          } else if (task.due_date) {
+            taskDate = new Date(task.due_date + 'T12:00:00');
+            taskDate.setHours(0, 0, 0, 0);
+            taskStartTime = taskDate;
+          } else {
+            return; // Skip tasks without dates in calendar view
+          }
+
+          const key = taskDate.toISOString().split('T')[0];
           if (!dayMap.has(key)) dayMap.set(key, []);
           dayMap.get(key)!.push({
             type: 'task',
             id: task.id,
             title: task.title,
-            startTime: taskDate,
-            allDay: true,
+            startTime: taskStartTime,
+            endTime: taskEndTime,
+            allDay: isAllDay,
             priority: task.priority,
             status: task.status,
             description: task.description,
             emailSubject: task.email_subject,
+            isScheduled: task.is_scheduled,
           });
         });
     }
@@ -371,12 +512,9 @@ export default function CalendarPage() {
         label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
       }
 
-      // Sort items within day by time
       const items = dayMap.get(key)!.sort((a, b) => {
-        // All-day items first
         if (a.allDay && !b.allDay) return -1;
         if (!a.allDay && b.allDay) return 1;
-        // Then by start time
         return a.startTime.getTime() - b.startTime.getTime();
       });
 
@@ -390,7 +528,6 @@ export default function CalendarPage() {
   const buildWeekGridEvents = useCallback((): WeekGridEvent[] => {
     const weekEvents: WeekGridEvent[] = [];
 
-    // Add events
     if (viewFilter === 'all' || viewFilter === 'events') {
       events
         .filter((e) => e.status === 'confirmed')
@@ -408,25 +545,38 @@ export default function CalendarPage() {
         });
     }
 
-    // Add tasks
     if (viewFilter === 'all' || viewFilter === 'tasks') {
       tasks
         .filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
         .forEach((task) => {
-          const taskDate = task.due_date ? new Date(task.due_date + 'T09:00:00') : new Date();
-          weekEvents.push({
-            id: task.id,
-            type: 'task',
-            title: task.title,
-            startTime: taskDate,
-            allDay: true,
-            priority: task.priority,
-            status: task.status,
-          });
+          if (task.is_scheduled && task.scheduled_start) {
+            weekEvents.push({
+              id: task.id,
+              type: 'task',
+              title: task.title,
+              startTime: new Date(task.scheduled_start),
+              endTime: task.scheduled_end ? new Date(task.scheduled_end) : undefined,
+              allDay: false,
+              priority: task.priority,
+              status: task.status,
+              isScheduled: true,
+            });
+          } else if (task.due_date) {
+            const taskDate = new Date(task.due_date + 'T09:00:00');
+            weekEvents.push({
+              id: task.id,
+              type: 'task',
+              title: task.title,
+              startTime: taskDate,
+              allDay: true,
+              priority: task.priority,
+              status: task.status,
+              isScheduled: false,
+            });
+          }
         });
     }
 
-    // Add scheduling suggestions
     if (viewFilter === 'all' || viewFilter === 'suggestions') {
       suggestions
         .filter((s) => s.status === 'pending')
@@ -449,14 +599,12 @@ export default function CalendarPage() {
   const weekStartDate = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    // Get Sunday of current week
     const dayOfWeek = today.getDay();
     const sunday = new Date(today);
     sunday.setDate(today.getDate() - dayOfWeek + weekOffset * 7);
     return sunday;
   }, [weekOffset]);
 
-  // Handle view mode change with localStorage persistence
   const handleViewModeChange = useCallback((mode: ViewMode) => {
     setViewMode(mode);
     if (typeof window !== 'undefined') {
@@ -464,15 +612,16 @@ export default function CalendarPage() {
     }
   }, []);
 
-  // Handle week grid event click
   const handleWeekGridEventClick = useCallback((event: WeekGridEvent) => {
     if (event.type === 'event') {
       handleViewPrep(event.id);
     }
-    // For tasks and suggestions, we could open a modal or navigate
-    // For now, just log it
-    console.log('Clicked event:', event);
   }, [handleViewPrep]);
+
+  const handleCreated = useCallback(() => {
+    loadCalendarData();
+    loadUnscheduledTasks();
+  }, [loadCalendarData, loadUnscheduledTasks]);
 
   if (loading) {
     return (
@@ -488,201 +637,274 @@ export default function CalendarPage() {
   const totalSuggestions = suggestions.filter((s) => s.status === 'pending').length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-3xl mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-gray-900">Calendar</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {totalEvents} events · {totalTasks} tasks · {totalSuggestions} suggestions
-          </p>
-        </div>
-
-        {/* View Toggle & Filters */}
-        <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
-          {/* View Mode Toggle */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => handleViewModeChange('list')}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-white shadow text-gray-900'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <span className="flex items-center gap-1.5">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                </svg>
-                List
-              </span>
-            </button>
-            <button
-              onClick={() => handleViewModeChange('week')}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                viewMode === 'week'
-                  ? 'bg-white shadow text-gray-900'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <span className="flex items-center gap-1.5">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                Week
-              </span>
-            </button>
-          </div>
-
-          {/* Week Navigation (only in week mode) */}
-          {viewMode === 'week' && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setWeekOffset((prev) => prev - 1)}
-                className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-                aria-label="Previous week"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <button
-                onClick={() => setWeekOffset(0)}
-                className="px-2 py-1 text-sm text-gray-600 hover:text-gray-900"
-              >
-                Today
-              </button>
-              <button
-                onClick={() => setWeekOffset((prev) => prev + 1)}
-                className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-                aria-label="Next week"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-              <span className="text-sm text-gray-500 ml-2">
-                {weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} -{' '}
-                {new Date(weekStartDate.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </span>
-            </div>
-          )}
-
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Content Filters */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            {(['all', 'events', 'tasks', 'suggestions'] as ViewFilter[]).map((filter) => (
-              <button
-                key={filter}
-                onClick={() => setViewFilter(filter)}
-                className={`px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition-colors ${
-                  viewFilter === filter
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
-                }`}
-              >
-                {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                {filter === 'events' && ` (${totalEvents})`}
-                {filter === 'tasks' && ` (${totalTasks})`}
-                {filter === 'suggestions' && ` (${totalSuggestions})`}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Error state */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-            {error}
-            <button
-              onClick={loadCalendarData}
-              className="ml-2 text-red-800 underline hover:no-underline"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-
-        {/* Calendar View */}
-        {viewMode === 'list' ? (
-          <AgendaList
-            days={calendarDays}
-            onTaskComplete={handleTaskComplete}
-            onTaskStart={handleTaskStart}
-            onViewPrep={handleViewPrep}
-            onAcceptSuggestion={handleAcceptSuggestion}
-            onDismissSuggestion={handleDismissSuggestion}
-            processingIds={processingIds}
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div className="min-h-screen bg-gray-50 flex">
+        {/* Sidebar */}
+        {showSidebar && viewMode === 'week' && (
+          <UnscheduledSidebar
+            tasks={unscheduledTasks}
+            onRefresh={loadUnscheduledTasks}
           />
-        ) : (
-          <div className="max-w-full overflow-x-auto">
-            <WeekGrid
-              events={buildWeekGridEvents()}
-              startDate={weekStartDate}
-              onEventClick={handleWeekGridEventClick}
-            />
-          </div>
         )}
 
-        {/* Navigation */}
-        <div className="mt-8 pt-4 border-t border-gray-200 flex gap-4">
-          <a href="/" className="text-sm text-blue-600 hover:text-blue-800">
-            ← Home
-          </a>
-          <a href="/tasks" className="text-sm text-blue-600 hover:text-blue-800">
-            Tasks →
-          </a>
-        </div>
-      </div>
-
-      {/* Prep Packet Modal */}
-      {selectedEventId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="max-w-lg w-full max-h-[80vh] overflow-auto">
-            {loadingPrep ? (
-              <div className="bg-white rounded-lg p-8 text-center">
-                <div className="animate-spin w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full mx-auto mb-4" />
-                <p className="text-gray-600">Generating prep packet...</p>
+        {/* Main content */}
+        <div className="flex-1 overflow-hidden">
+          <div className="max-w-4xl mx-auto px-4 py-6">
+            {/* Header */}
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold text-gray-900">Calendar</h1>
+                <p className="text-sm text-gray-500 mt-1">
+                  {totalEvents} events · {totalTasks} tasks · {totalSuggestions} suggestions
+                </p>
               </div>
-            ) : prepPacket ? (
-              <PrepPacket
-                packet={prepPacket}
-                onRegenerate={handleRegeneratePrep}
-                isRegenerating={regeneratingPrep}
-                onClose={handleClosePrep}
-              />
-            ) : (
-              <div className="bg-white rounded-lg p-8 text-center">
-                <p className="text-gray-600">Failed to load prep packet</p>
+
+              {/* FAB buttons */}
+              <div className="flex gap-2">
                 <button
-                  onClick={handleClosePrep}
-                  className="mt-4 text-sm text-gray-500 hover:text-gray-700"
+                  onClick={() => setShowCreateTaskModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
-                  Close
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Task
+                </button>
+                <button
+                  onClick={() => setShowCreateEventModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Event
+                </button>
+              </div>
+            </div>
+
+            {/* View Toggle & Filters */}
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              {/* View Mode Toggle */}
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => handleViewModeChange('list')}
+                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-white shadow text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                    List
+                  </span>
+                </button>
+                <button
+                  onClick={() => handleViewModeChange('week')}
+                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    viewMode === 'week'
+                      ? 'bg-white shadow text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Week
+                  </span>
+                </button>
+              </div>
+
+              {/* Sidebar toggle (only in week mode) */}
+              {viewMode === 'week' && (
+                <button
+                  onClick={() => setShowSidebar(!showSidebar)}
+                  className={`p-1.5 rounded hover:bg-gray-100 transition-colors ${
+                    showSidebar ? 'text-blue-600' : 'text-gray-400'
+                  }`}
+                  title={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                </button>
+              )}
+
+              {/* Week Navigation (only in week mode) */}
+              {viewMode === 'week' && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setWeekOffset((prev) => prev - 1)}
+                    className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setWeekOffset(0)}
+                    className="px-2 py-1 text-sm text-gray-600 hover:text-gray-900"
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setWeekOffset((prev) => prev + 1)}
+                    className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                  <span className="text-sm text-gray-500 ml-2">
+                    {weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} -{' '}
+                    {new Date(weekStartDate.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex-1" />
+
+              {/* Content Filters */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {(['all', 'events', 'tasks', 'suggestions'] as ViewFilter[]).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setViewFilter(filter)}
+                    className={`px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition-colors ${
+                      viewFilter === filter
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                    {filter === 'events' && ` (${totalEvents})`}
+                    {filter === 'tasks' && ` (${totalTasks})`}
+                    {filter === 'suggestions' && ` (${totalSuggestions})`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Error state */}
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {error}
+                <button
+                  onClick={loadCalendarData}
+                  className="ml-2 text-red-800 underline hover:no-underline"
+                >
+                  Retry
                 </button>
               </div>
             )}
-          </div>
-        </div>
-      )}
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-4 right-4 z-50">
-          <div
-            className={`rounded-lg px-4 py-2 shadow-lg text-sm ${
-              toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-            }`}
-          >
-            {toast.message}
+            {/* Calendar View */}
+            {viewMode === 'list' ? (
+              <AgendaList
+                days={calendarDays}
+                onTaskComplete={handleTaskComplete}
+                onTaskStart={handleTaskStart}
+                onViewPrep={handleViewPrep}
+                onAcceptSuggestion={handleAcceptSuggestion}
+                onDismissSuggestion={handleDismissSuggestion}
+                processingIds={processingIds}
+              />
+            ) : (
+              <div className="max-w-full overflow-x-auto">
+                <WeekGrid
+                  events={buildWeekGridEvents()}
+                  startDate={weekStartDate}
+                  onEventClick={handleWeekGridEventClick}
+                  enableDragDrop={true}
+                />
+              </div>
+            )}
+
+            {/* Navigation */}
+            <div className="mt-8 pt-4 border-t border-gray-200 flex gap-4">
+              <a href="/" className="text-sm text-blue-600 hover:text-blue-800">
+                ← Home
+              </a>
+              <a href="/tasks" className="text-sm text-blue-600 hover:text-blue-800">
+                Tasks →
+              </a>
+            </div>
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Prep Packet Modal */}
+        {selectedEventId && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="max-w-lg w-full max-h-[80vh] overflow-auto">
+              {loadingPrep ? (
+                <div className="bg-white rounded-lg p-8 text-center">
+                  <div className="animate-spin w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full mx-auto mb-4" />
+                  <p className="text-gray-600">Generating prep packet...</p>
+                </div>
+              ) : prepPacket ? (
+                <PrepPacket
+                  packet={prepPacket}
+                  onRegenerate={handleRegeneratePrep}
+                  isRegenerating={regeneratingPrep}
+                  onClose={handleClosePrep}
+                />
+              ) : (
+                <div className="bg-white rounded-lg p-8 text-center">
+                  <p className="text-gray-600">Failed to load prep packet</p>
+                  <button
+                    onClick={handleClosePrep}
+                    className="mt-4 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Create Event Modal */}
+        <CreateEventModal
+          isOpen={showCreateEventModal}
+          onClose={() => setShowCreateEventModal(false)}
+          onCreated={handleCreated}
+        />
+
+        {/* Create Task Modal */}
+        <CreateTaskModal
+          isOpen={showCreateTaskModal}
+          onClose={() => setShowCreateTaskModal(false)}
+          onCreated={handleCreated}
+        />
+
+        {/* Toast */}
+        {toast && (
+          <div className="fixed bottom-4 right-4 z-50">
+            <div
+              className={`rounded-lg px-4 py-2 shadow-lg text-sm ${
+                toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+              }`}
+            >
+              {toast.message}
+            </div>
+          </div>
+        )}
+
+        {/* Drag overlay */}
+        <DragOverlay>
+          {activeDragItem?.type === 'task' && (
+            <div className="bg-white border-2 border-blue-400 rounded-lg p-2 shadow-lg opacity-90">
+              <p className="text-sm font-medium">{activeDragItem.task.title}</p>
+            </div>
+          )}
+        </DragOverlay>
+      </div>
+    </DndContext>
   );
 }

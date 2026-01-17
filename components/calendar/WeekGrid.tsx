@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { useDroppable, useDraggable } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 
 export interface WeekGridEvent {
   id: string;
@@ -14,20 +16,129 @@ export interface WeekGridEvent {
   hasPrepPacket?: boolean;
   meetingLink?: string;
   reason?: string;
+  isScheduled?: boolean;
 }
 
 interface WeekGridProps {
   events: WeekGridEvent[];
   startDate: Date;
   onEventClick?: (event: WeekGridEvent) => void;
+  enableDragDrop?: boolean;
 }
 
 const HOURS = Array.from({ length: 14 }, (_, i) => i + 7); // 7 AM to 8 PM
+const SLOT_HEIGHT = 50; // pixels per hour
+
+// Droppable time slot component
+function TimeSlot({
+  dayKey,
+  hour,
+  isToday,
+}: {
+  dayKey: string;
+  hour: number;
+  isToday: boolean;
+}) {
+  const slotId = `slot-${dayKey}-${hour}`;
+  const { isOver, setNodeRef } = useDroppable({
+    id: slotId,
+    data: {
+      type: 'time-slot',
+      dayKey,
+      hour,
+    },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`
+        h-[50px] border-b border-gray-100 transition-colors
+        ${isOver ? 'bg-blue-100 border-blue-300' : ''}
+        ${isToday && !isOver ? 'bg-blue-50/30' : ''}
+      `}
+    />
+  );
+}
+
+// Draggable event component
+function DraggableEvent({
+  item,
+  style,
+  onClick,
+  enableDrag,
+}: {
+  item: WeekGridEvent;
+  style: React.CSSProperties;
+  onClick?: () => void;
+  enableDrag?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `event-${item.id}`,
+    data: {
+      type: item.type,
+      event: item,
+    },
+    disabled: !enableDrag,
+  });
+
+  const getEventColor = () => {
+    if (item.type === 'event') {
+      return 'bg-purple-100 border-purple-300 text-purple-900';
+    }
+    if (item.type === 'task') {
+      if (item.priority === 'high') return 'bg-red-100 border-red-300 text-red-900';
+      if (item.priority === 'med') return 'bg-yellow-100 border-yellow-300 text-yellow-900';
+      return 'bg-blue-100 border-blue-300 text-blue-900';
+    }
+    return 'bg-gray-100 border-gray-300 border-dashed text-gray-700 opacity-75';
+  };
+
+  const dragStyle = transform
+    ? {
+        ...style,
+        transform: CSS.Translate.toString(transform),
+        zIndex: isDragging ? 50 : undefined,
+        opacity: isDragging ? 0.8 : 1,
+        boxShadow: isDragging ? '0 4px 12px rgba(0,0,0,0.15)' : undefined,
+      }
+    : style;
+
+  return (
+    <button
+      ref={setNodeRef}
+      {...(enableDrag ? { ...listeners, ...attributes } : {})}
+      onClick={onClick}
+      className={`
+        absolute left-0.5 right-0.5 px-1 py-0.5 text-xs rounded border overflow-hidden
+        ${getEventColor()}
+        ${enableDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
+        hover:z-10 hover:shadow-md transition-shadow
+        ${isDragging ? 'ring-2 ring-blue-400' : ''}
+      `}
+      style={dragStyle}
+    >
+      <div className="font-medium truncate">
+        {item.type === 'suggestion' ? '💡 ' : ''}
+        {item.title}
+      </div>
+      <div className="text-xs opacity-75">
+        {item.startTime.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })}
+        {item.hasPrepPacket && ' ✨'}
+      </div>
+    </button>
+  );
+}
 
 export default function WeekGrid({
   events,
   startDate,
   onEventClick,
+  enableDragDrop = false,
 }: WeekGridProps) {
   const [hoveredEvent, setHoveredEvent] = useState<string | null>(null);
 
@@ -66,22 +177,22 @@ export default function WeekGrid({
   }, [events, weekDays]);
 
   // Get all-day items for a day
-  const getAllDayItems = (dayKey: string) => {
+  const getAllDayItems = useCallback((dayKey: string) => {
     return (eventsByDay.get(dayKey) || []).filter((e) => e.allDay);
-  };
+  }, [eventsByDay]);
 
   // Get timed items for a day
-  const getTimedItems = (dayKey: string) => {
+  const getTimedItems = useCallback((dayKey: string) => {
     return (eventsByDay.get(dayKey) || []).filter((e) => !e.allDay);
-  };
+  }, [eventsByDay]);
 
   // Calculate event position and height
-  const getEventStyle = (event: WeekGridEvent) => {
+  const getEventStyle = useCallback((event: WeekGridEvent): React.CSSProperties => {
     const startHour = event.startTime.getHours() + event.startTime.getMinutes() / 60;
     const endTime = event.endTime || new Date(event.startTime.getTime() + 60 * 60 * 1000);
     const endHour = endTime.getHours() + endTime.getMinutes() / 60;
 
-    const top = ((startHour - 7) / 14) * 100; // 7 AM is 0%
+    const top = ((startHour - 7) / 14) * 100;
     const height = ((endHour - startHour) / 14) * 100;
 
     return {
@@ -89,10 +200,10 @@ export default function WeekGrid({
       height: `${Math.min(height, 100 - top)}%`,
       minHeight: '24px',
     };
-  };
+  }, []);
 
   // Get event color
-  const getEventColor = (event: WeekGridEvent) => {
+  const getEventColor = useCallback((event: WeekGridEvent) => {
     if (event.type === 'event') {
       return 'bg-purple-100 border-purple-300 text-purple-900';
     }
@@ -101,22 +212,21 @@ export default function WeekGrid({
       if (event.priority === 'med') return 'bg-yellow-100 border-yellow-300 text-yellow-900';
       return 'bg-blue-100 border-blue-300 text-blue-900';
     }
-    // Suggestion
     return 'bg-gray-100 border-gray-300 border-dashed text-gray-700 opacity-75';
-  };
+  }, []);
 
-  const isToday = (date: Date) => {
+  const isToday = useCallback((date: Date) => {
     const today = new Date();
     return (
       date.getDate() === today.getDate() &&
       date.getMonth() === today.getMonth() &&
       date.getFullYear() === today.getFullYear()
     );
-  };
+  }, []);
 
-  const formatDayHeader = (date: Date) => {
+  const formatDayHeader = useCallback((date: Date) => {
     return date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
-  };
+  }, []);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -187,51 +297,75 @@ export default function WeekGrid({
         {weekDays.map((day) => {
           const dayKey = day.toISOString().split('T')[0];
           const timedItems = getTimedItems(dayKey);
+          const todayFlag = isToday(day);
 
           return (
             <div
               key={dayKey}
-              className={`relative border-r border-gray-100 last:border-r-0 ${
-                isToday(day) ? 'bg-blue-50/30' : ''
-              }`}
+              className="relative border-r border-gray-100 last:border-r-0"
             >
-              {/* Hour grid lines */}
-              {HOURS.map((hour) => (
-                <div
-                  key={hour}
-                  className="h-[50px] border-b border-gray-100"
-                />
-              ))}
+              {/* Hour grid lines / droppable slots */}
+              {enableDragDrop ? (
+                HOURS.map((hour) => (
+                  <TimeSlot
+                    key={hour}
+                    dayKey={dayKey}
+                    hour={hour}
+                    isToday={todayFlag}
+                  />
+                ))
+              ) : (
+                HOURS.map((hour) => (
+                  <div
+                    key={hour}
+                    className={`h-[50px] border-b border-gray-100 ${todayFlag ? 'bg-blue-50/30' : ''}`}
+                  />
+                ))
+              )}
 
               {/* Events */}
-              {timedItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => onEventClick?.(item)}
-                  onMouseEnter={() => setHoveredEvent(item.id)}
-                  onMouseLeave={() => setHoveredEvent(null)}
-                  className={`absolute left-0.5 right-0.5 px-1 py-0.5 text-xs rounded border overflow-hidden ${getEventColor(item)} hover:z-10 hover:shadow-md transition-shadow`}
-                  style={getEventStyle(item)}
-                >
-                  <div className="font-medium truncate">
-                    {item.type === 'suggestion' ? '💡 ' : ''}
-                    {item.title}
-                  </div>
-                  <div className="text-xs opacity-75">
-                    {item.startTime.toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true,
-                    })}
-                    {item.hasPrepPacket && ' ✨'}
-                  </div>
-                </button>
-              ))}
+              {timedItems.map((item) => {
+                const style = getEventStyle(item);
+
+                if (enableDragDrop && (item.type === 'task' || item.type === 'event')) {
+                  return (
+                    <DraggableEvent
+                      key={item.id}
+                      item={item}
+                      style={style}
+                      onClick={() => onEventClick?.(item)}
+                      enableDrag={item.type === 'task' && item.isScheduled}
+                    />
+                  );
+                }
+
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onEventClick?.(item)}
+                    onMouseEnter={() => setHoveredEvent(item.id)}
+                    onMouseLeave={() => setHoveredEvent(null)}
+                    className={`absolute left-0.5 right-0.5 px-1 py-0.5 text-xs rounded border overflow-hidden ${getEventColor(item)} hover:z-10 hover:shadow-md transition-shadow`}
+                    style={style}
+                  >
+                    <div className="font-medium truncate">
+                      {item.type === 'suggestion' ? '💡 ' : ''}
+                      {item.title}
+                    </div>
+                    <div className="text-xs opacity-75">
+                      {item.startTime.toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      })}
+                      {item.hasPrepPacket && ' ✨'}
+                    </div>
+                  </button>
+                );
+              })}
 
               {/* Current time indicator */}
-              {isToday(day) && (
-                <CurrentTimeIndicator />
-              )}
+              {todayFlag && <CurrentTimeIndicator />}
             </div>
           );
         })}

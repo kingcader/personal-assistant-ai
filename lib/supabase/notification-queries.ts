@@ -12,7 +12,11 @@ export type NotificationType =
   | 'follow_up'
   | 'waiting_on'
   | 'morning_brief'
-  | 'evening_brief';
+  | 'evening_brief'
+  | 'calendar_event'
+  | 'meeting_prep'
+  | 'scheduling_suggestion'
+  | 'reminder';
 
 export interface Notification {
   id: string;

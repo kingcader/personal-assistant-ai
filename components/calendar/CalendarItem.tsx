@@ -21,6 +21,7 @@ export interface CalendarItemProps {
   status?: 'todo' | 'in_progress' | 'completed' | 'cancelled';
   description?: string | null;
   emailSubject?: string | null;
+  isScheduled?: boolean;
   // Suggestion-specific
   reason?: string;
   taskTitle?: string;
@@ -30,6 +31,8 @@ export interface CalendarItemProps {
   onViewPrep?: (id: string) => void;
   onAcceptSuggestion?: (id: string) => void;
   onDismissSuggestion?: (id: string) => void;
+  onUnschedule?: (id: string) => void;
+  onEdit?: (id: string) => void;
   isProcessing?: boolean;
 }
 
@@ -48,6 +51,7 @@ export default function CalendarItem({
   status,
   description,
   emailSubject,
+  isScheduled,
   reason,
   taskTitle,
   onComplete,
@@ -55,6 +59,8 @@ export default function CalendarItem({
   onViewPrep,
   onAcceptSuggestion,
   onDismissSuggestion,
+  onUnschedule,
+  onEdit,
   isProcessing,
 }: CalendarItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -251,7 +257,15 @@ export default function CalendarItem({
                   <span className="font-medium">From email:</span> {emailSubject}
                 </div>
               )}
-              <div className="flex gap-2 mt-3">
+              {isScheduled && (
+                <div className="text-xs text-blue-600 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span>Scheduled</span>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2 mt-3">
                 {status === 'todo' && onStart && (
                   <button
                     onClick={(e) => {
@@ -274,6 +288,30 @@ export default function CalendarItem({
                     className="text-xs px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                   >
                     Complete
+                  </button>
+                )}
+                {isScheduled && onUnschedule && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUnschedule(id);
+                    }}
+                    disabled={isProcessing}
+                    className="text-xs px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                  >
+                    Unschedule
+                  </button>
+                )}
+                {onEdit && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(id);
+                    }}
+                    disabled={isProcessing}
+                    className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Edit
                   </button>
                 )}
               </div>
