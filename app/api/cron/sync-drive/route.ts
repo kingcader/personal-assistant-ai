@@ -123,8 +123,8 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Sync a batch of files from a folder (non-recursive, paginated)
- * This processes just one page of files per folder per run to avoid timeouts.
+ * Sync files from a folder recursively with batching.
+ * Processes up to MAX_FILES_PER_SYNC files total across all subfolders.
  */
 async function syncFolderBatch(folder: KBFolder): Promise<{
   discovered: number;
@@ -139,52 +139,45 @@ async function syncFolderBatch(folder: KBFolder): Promise<{
     skipped: 0,
   };
 
-  // List files in the Drive folder (one page at a time)
-  console.log(`📂 Listing files in "${folder.folder_name}" (${folder.drive_folder_id})...`);
-  const pageResult = await listFilesInFolder(folder.drive_folder_id, undefined, MAX_FILES_PER_SYNC);
+  // Queue of folder IDs to process (starts with root folder)
+  const folderQueue: string[] = [folder.drive_folder_id];
+  let filesProcessed = 0;
 
-  result.discovered = pageResult.files.length;
-  console.log(`📄 Found ${pageResult.files.length} files in this batch`);
+  while (folderQueue.length > 0 && filesProcessed < MAX_FILES_PER_SYNC) {
+    const currentFolderId = folderQueue.shift()!;
+    console.log(`📂 Processing folder: ${currentFolderId}...`);
 
-  // Process each file
-  for (const file of pageResult.files) {
-    // Skip folders
-    if (file.mimeType === 'application/vnd.google-apps.folder') {
-      result.skipped++;
-      continue;
-    }
+    // List files in the current folder
+    const pageResult = await listFilesInFolder(currentFolderId, undefined, 100);
+    result.discovered += pageResult.files.length;
 
-    // Check if file is supported
-    if (!isSupportedMimeType(file.mimeType)) {
-      result.skipped++;
-      continue;
-    }
+    for (const file of pageResult.files) {
+      if (filesProcessed >= MAX_FILES_PER_SYNC) {
+        console.log(`⏸️ Reached batch limit of ${MAX_FILES_PER_SYNC} files`);
+        break;
+      }
 
-    // Check if document already exists
-    const existingDoc = await getDocumentByDriveId(file.id);
+      // If it's a subfolder, add to queue for later processing
+      if (file.mimeType === 'application/vnd.google-apps.folder') {
+        folderQueue.push(file.id);
+        console.log(`📁 Queued subfolder: ${file.name}`);
+        continue;
+      }
 
-    if (!existingDoc) {
-      // New file - create document
-      await upsertDocument({
-        folder_id: folder.id,
-        drive_file_id: file.id,
-        file_name: file.name,
-        file_path: await getFilePath(file.id),
-        mime_type: file.mimeType,
-        drive_modified_at: file.modifiedTime.toISOString(),
-        file_size_bytes: file.size || undefined,
-        truth_priority: folder.truth_priority,
-      });
-      result.new++;
-      console.log(`📄 New file: ${file.name}`);
-    } else {
-      // Check if file has been modified
-      const existingModified = existingDoc.drive_modified_at
-        ? new Date(existingDoc.drive_modified_at)
-        : null;
+      // Check if file is supported
+      if (!isSupportedMimeType(file.mimeType)) {
+        result.skipped++;
+        console.log(`⏭️ Skipped unsupported: ${file.name} (${file.mimeType})`);
+        continue;
+      }
 
-      if (!existingModified || file.modifiedTime > existingModified) {
-        // File has been updated - mark for reprocessing
+      filesProcessed++;
+
+      // Check if document already exists
+      const existingDoc = await getDocumentByDriveId(file.id);
+
+      if (!existingDoc) {
+        // New file - create document
         await upsertDocument({
           folder_id: folder.id,
           drive_file_id: file.id,
@@ -195,12 +188,34 @@ async function syncFolderBatch(folder: KBFolder): Promise<{
           file_size_bytes: file.size || undefined,
           truth_priority: folder.truth_priority,
         });
-        result.updated++;
-        console.log(`📝 Updated file: ${file.name}`);
+        result.new++;
+        console.log(`📄 New file: ${file.name}`);
+      } else {
+        // Check if file has been modified
+        const existingModified = existingDoc.drive_modified_at
+          ? new Date(existingDoc.drive_modified_at)
+          : null;
+
+        if (!existingModified || file.modifiedTime > existingModified) {
+          // File has been updated - mark for reprocessing
+          await upsertDocument({
+            folder_id: folder.id,
+            drive_file_id: file.id,
+            file_name: file.name,
+            file_path: await getFilePath(file.id),
+            mime_type: file.mimeType,
+            drive_modified_at: file.modifiedTime.toISOString(),
+            file_size_bytes: file.size || undefined,
+            truth_priority: folder.truth_priority,
+          });
+          result.updated++;
+          console.log(`📝 Updated file: ${file.name}`);
+        }
       }
     }
   }
 
+  console.log(`📊 Processed ${filesProcessed} files, ${folderQueue.length} folders remaining in queue`);
   return result;
 }
 
