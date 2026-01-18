@@ -31,7 +31,7 @@ interface SearchResultResponse {
   sectionTitle: string | null;
   similarity: number;
   truthPriority: string | null;
-  driveUrl: string;
+  driveUrl: string | null;
   summary: string | null;
 }
 
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Validate input
-    const { query, limit = 10, truthPriorityFilter, threshold = 0.7 } = body;
+    const { query, limit = 10, truthPriorityFilter, threshold = 0.5 } = body;
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       sectionTitle: result.section_title,
       similarity: result.similarity,
       truthPriority: result.truth_priority,
-      driveUrl: getDriveFileUrl(result.drive_file_id),
+      driveUrl: result.drive_file_id ? getDriveFileUrl(result.drive_file_id) : null,
       summary: result.summary || null,
     }));
 
