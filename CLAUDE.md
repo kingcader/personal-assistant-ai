@@ -104,15 +104,23 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - Unschedule button to remove task from calendar while keeping the task
 - `/api/cron/send-reminders` endpoint (runs every 5 minutes)
 
-### Loop 5 - PLANNED
-**Execution Helpers (Task Workbench)**
-- Per-task AI actions: draft reply, create checklist, suggest next actions
-- Still approval-gated
+### Loop 5 - COMPLETED
+**Knowledge Base + RAG System**
+- Google Drive integration with folder sync
+- Text extraction for Google Docs, PDFs, Sheets, text files
+- Semantic chunking with configurable token limits and overlap
+- OpenAI embeddings (text-embedding-3-small, 1536 dimensions)
+- pgvector for semantic search with HNSW indexing
+- Truth priority weighting (standard/high/authoritative)
+- `/knowledge-base` page with folder management, document list, semantic search
+- Task-document linking with auto-association
+- `/api/cron/sync-drive` - Sync files from Drive (every 30 min)
+- `/api/cron/process-kb` - Extract, chunk, embed (every 10 min)
 
 ### Loop 6 - PLANNED
-**Calendar Write (Controlled)**
-- Propose calendar events
-- Write to dedicated "AI Assistant" calendar after approval
+**Entity System (People/Orgs)**
+- Track people and organizations across emails, documents, tasks
+- Relationship mapping and context
 
 ### Loop 7 - PLANNED
 **Conversational Interface**
@@ -122,19 +130,20 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - Context-aware: assistant knows current tasks, meetings, waiting-on items
 
 ### Loop 8 - PLANNED
-**Knowledge Base + RAG**
-- Ingest documents, transcripts, notes
-- Chunk + embed for retrieval
-- Chat with citations
+**Multi-Source Ingestion**
+- Call transcripts, meeting notes, logs
+- Automatic categorization and tagging
 
 ### Loop 9 - PLANNED
+**Business Intelligence (Focus/Priorities)**
+- Current focus tracking
+- Priority-based workflows
+- Weekly/monthly reflection on patterns, delays, risks
+
+### Loop 10 - PLANNED
 **Current Truth Page**
 - Structured source-of-truth: agreements, pricing, policies, templates
 - Explicit approval for updates
-
-### Loop 10 - PLANNED
-**Long-term Intelligence**
-- Weekly/monthly reflection on patterns, delays, risks
 
 ## DATABASE SCHEMA
 
@@ -159,6 +168,13 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `meeting_prep_packets` - AI-generated meeting prep content (JSONB)
 - `scheduling_suggestions` - AI suggestions for task time blocks
 - `calendar_sync_state` - Track sync progress and tokens
+
+### Loop 5 Tables (Knowledge Base)
+- `kb_folders` - Synced Google Drive folders with truth priority
+- `kb_documents` - File metadata with sync status (pending/processing/indexed/failed)
+- `kb_chunks` - Text chunks with pgvector embeddings (1536 dimensions)
+- `task_documents` - Task-document links with relevance scores
+- `kb_search_history` - Search query analytics
 
 ### Key Views
 - `waiting_on_threads` - Threads I'm waiting on with days_waiting
@@ -186,6 +202,12 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `app/api/follow-ups/generate/[threadId]/route.ts` - AI generates follow-up draft
 - `app/api/calendar/route.ts` - Unified calendar data API (Loop 4)
 - `app/api/calendar/[eventId]/prep/route.ts` - Get/generate AI prep packets (Loop 4)
+- `app/api/cron/sync-drive/route.ts` - Sync Google Drive folders (Loop 5)
+- `app/api/cron/process-kb/route.ts` - Process pending documents (Loop 5)
+- `app/api/kb/search/route.ts` - Semantic search API (Loop 5)
+- `app/api/kb/folders/route.ts` - List/add folders (Loop 5)
+- `app/api/kb/folders/[id]/route.ts` - Get/update/delete folder (Loop 5)
+- `app/api/tasks/[id]/context/route.ts` - Task-document context (Loop 5)
 
 ### Pages
 - `app/page.tsx` - Home with navigation
@@ -194,6 +216,7 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `app/waiting-on/page.tsx` - Stalled threads list
 - `app/review/page.tsx` - Unified approval queue
 - `app/calendar/page.tsx` - Calendar with list/week views (Loop 4)
+- `app/knowledge-base/page.tsx` - Knowledge Base search and folder management (Loop 5)
 - `app/layout.tsx` - Global layout with PWA meta tags and NotificationBell
 
 ### Components
@@ -202,6 +225,12 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `components/calendar/AgendaList.tsx` - Agenda list view (Loop 4)
 - `components/calendar/WeekGrid.tsx` - Week grid view (Loop 4)
 - `components/calendar/PrepPacket.tsx` - AI prep packet display (Loop 4)
+- `components/kb/FolderList.tsx` - Synced folders list (Loop 5)
+- `components/kb/DocumentList.tsx` - Documents in folder (Loop 5)
+- `components/kb/SearchBar.tsx` - Semantic search input (Loop 5)
+- `components/kb/SearchResults.tsx` - Search results with citations (Loop 5)
+- `components/kb/AddFolderModal.tsx` - Add Drive folder modal (Loop 5)
+- `components/kb/TaskContextPanel.tsx` - Related documents for tasks (Loop 5)
 - `hooks/usePushNotifications.ts` - Push subscription management hook
 
 ### Libraries
@@ -211,10 +240,19 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `lib/supabase/notification-queries.ts` - Notification/brief/subscription queries
 - `lib/supabase/audit-queries.ts` - Audit log queries
 - `lib/supabase/calendar-queries.ts` - Calendar event/prep/scheduling queries (Loop 4)
+- `lib/supabase/kb-queries.ts` - Knowledge Base folder/document/chunk queries (Loop 5)
+- `lib/kb/extractors/index.ts` - Text extraction router (Loop 5)
+- `lib/kb/extractors/google-docs.ts` - Google Docs extractor (Loop 5)
+- `lib/kb/extractors/pdf.ts` - PDF extractor (Loop 5)
+- `lib/kb/extractors/text.ts` - Plain text extractor (Loop 5)
+- `lib/kb/extractors/sheets.ts` - Google Sheets extractor (Loop 5)
+- `lib/kb/chunker.ts` - Text chunking logic (Loop 5)
+- `lib/kb/embeddings.ts` - OpenAI embedding generation (Loop 5)
 - `lib/gmail/client.ts` - Gmail fetch (including fetchMessagesInThreads for sent emails)
 - `lib/gmail/send.ts` - Gmail send
-- `lib/google/auth.ts` - Shared Google OAuth client (Loop 4)
+- `lib/google/auth.ts` - Shared Google OAuth client (Loop 4/5)
 - `lib/google/calendar.ts` - Google Calendar API functions (Loop 4)
+- `lib/google/drive.ts` - Google Drive API functions (Loop 5)
 - `lib/ai/task-extraction-prompt.ts` - AI prompt for tasks
 - `lib/ai/follow-up-prompt.ts` - AI prompt for follow-ups
 - `lib/ai/meeting-prep-prompt.ts` - AI prompt for meeting prep packets (Loop 4)
@@ -231,6 +269,7 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `supabase/migrations/002_threads_followups_audit.sql` - Loop 2 schema
 - `supabase/migrations/003_briefs_notifications.sql` - Loop 3 schema
 - `supabase/migrations/005_calendar_schema.sql` - Loop 4 schema (calendar events, prep packets, scheduling)
+- `supabase/migrations/007_knowledge_base_schema.sql` - Loop 5 schema (KB folders, documents, chunks with pgvector)
 
 ## CONFIGURATION
 
@@ -269,20 +308,23 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 
 ## CURRENT STATUS
 
-**Last Updated**: January 16, 2025
+**Last Updated**: January 17, 2025
 
 - Loop 1: COMPLETE - Email → Tasks working
 - Loop 2: COMPLETE - Waiting-on detection with sent emails working
 - Loop 3: COMPLETE - Daily briefs + push notifications
 - Loop 4: COMPLETE - AI-Powered Productivity Calendar
-- Migration 005: NEEDS TO BE APPLIED to Supabase
+- Loop 5: COMPLETE - Knowledge Base + RAG System
+- Migration 007: NEEDS TO BE APPLIED to Supabase (requires pgvector extension)
 - Deployment: LIVE at https://personal-assistant-ai-lime.vercel.app
 - Cron Jobs (cron-job.org):
   - process-emails: every 1 min
   - sync-threads: set up by user
   - generate-brief (morning): 0 13 * * * (7 AM Costa Rica)
   - generate-brief (evening): 0 2 * * * (8 PM Costa Rica)
-  - sync-calendar: every 15 min (NEEDS SETUP)
+  - sync-calendar: every 15 min
+  - sync-drive: every 30 min (NEEDS SETUP)
+  - process-kb: every 10 min (NEEDS SETUP)
 
 ## CRON JOB SETUP
 
@@ -294,13 +336,18 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 | Morning Brief | `https://personal-assistant-ai-lime.vercel.app/api/cron/generate-brief?type=morning` | `0 13 * * *` | 7:00 AM |
 | Evening Brief | `https://personal-assistant-ai-lime.vercel.app/api/cron/generate-brief?type=evening` | `0 2 * * *` | 8:00 PM |
 | Sync Calendar | `https://personal-assistant-ai-lime.vercel.app/api/cron/sync-calendar` | Every 15 min | - |
+| Sync Drive | `https://personal-assistant-ai-lime.vercel.app/api/cron/sync-drive` | Every 30 min | - |
+| Process KB | `https://personal-assistant-ai-lime.vercel.app/api/cron/process-kb` | Every 10 min | - |
 
 All cron jobs require `Authorization: Bearer {CRON_SECRET}` header.
 
 ## NEXT STEPS
 
-1. Apply migration 005 to Supabase for calendar tables
-2. Re-authorize Google OAuth with calendar.readonly scope (may need new refresh token)
-3. Set up sync-calendar cron job on cron-job.org (every 15 min)
-4. Test calendar sync and prep packet generation
-5. Move to Loop 5 (Execution Helpers / Task Workbench)
+1. Apply migration 007 to Supabase for Knowledge Base tables (requires pgvector extension)
+2. Re-authorize Google OAuth with drive.readonly scope (new refresh token needed)
+3. Run `npm install` to install pdf-parse dependency
+4. Set up sync-drive cron job on cron-job.org (every 30 min)
+5. Set up process-kb cron job on cron-job.org (every 10 min)
+6. Add first Google Drive folder via /knowledge-base page
+7. Test document sync, extraction, and semantic search
+8. Move to Loop 6 (Entity System)

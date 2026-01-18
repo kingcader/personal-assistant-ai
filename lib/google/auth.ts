@@ -15,6 +15,8 @@ export const GOOGLE_SCOPES = {
   GMAIL_SEND: 'https://www.googleapis.com/auth/gmail.send',
   CALENDAR_READONLY: 'https://www.googleapis.com/auth/calendar.readonly',
   CALENDAR_EVENTS: 'https://www.googleapis.com/auth/calendar.events',
+  DRIVE_READONLY: 'https://www.googleapis.com/auth/drive.readonly',
+  DRIVE_FULL: 'https://www.googleapis.com/auth/drive',
 };
 
 /**
@@ -49,6 +51,7 @@ export function getRequiredScopes(): string[] {
     GOOGLE_SCOPES.GMAIL_READONLY,
     GOOGLE_SCOPES.GMAIL_SEND,
     GOOGLE_SCOPES.CALENDAR_EVENTS, // Full calendar access (read + write)
+    GOOGLE_SCOPES.DRIVE_FULL, // Full Drive access (read + write + share)
   ];
 }
 
