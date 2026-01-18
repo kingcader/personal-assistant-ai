@@ -29,11 +29,11 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-// Process only 1 folder per cron run to stay within 30s timeout
-const FOLDERS_PER_RUN = 1;
+// Process up to 3 folders per cron run (30s timeout)
+const FOLDERS_PER_RUN = 3;
 
 // Maximum files to process per folder per sync run
-const MAX_FILES_PER_SYNC = 15;
+const MAX_FILES_PER_SYNC = 20;
 
 /**
  * Main Drive sync handler
