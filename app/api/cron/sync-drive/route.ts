@@ -142,9 +142,9 @@ async function syncFolder(folder: KBFolder): Promise<{
     skipped: 0,
   };
 
-  // List all files in the Drive folder
+  // List all files in the Drive folder (recursively including subfolders)
   console.log(`📂 Listing files in "${folder.folder_name}" (${folder.drive_folder_id})...`);
-  const driveFiles = await listAllFilesInFolder(folder.drive_folder_id, false, true);
+  const driveFiles = await listAllFilesInFolder(folder.drive_folder_id, true, true);
 
   result.discovered = driveFiles.length;
   console.log(`📄 Found ${driveFiles.length} supported files`);
