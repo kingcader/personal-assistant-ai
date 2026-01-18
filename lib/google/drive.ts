@@ -64,7 +64,7 @@ export const SUPPORTED_MIME_TYPES = {
  * Check if a MIME type is supported for extraction
  */
 export function isSupportedMimeType(mimeType: string): boolean {
-  const supported = [
+  const supported: string[] = [
     SUPPORTED_MIME_TYPES.GOOGLE_DOC,
     SUPPORTED_MIME_TYPES.GOOGLE_SHEET,
     SUPPORTED_MIME_TYPES.PDF,
@@ -77,19 +77,20 @@ export function isSupportedMimeType(mimeType: string): boolean {
     SUPPORTED_MIME_TYPES.IMAGE_GIF,
     SUPPORTED_MIME_TYPES.IMAGE_WEBP,
   ];
-  return supported.includes(mimeType as typeof SUPPORTED_MIME_TYPES[keyof typeof SUPPORTED_MIME_TYPES]);
+  return supported.includes(mimeType);
 }
 
 /**
  * Check if a MIME type is an image
  */
 export function isImageMimeType(mimeType: string): boolean {
-  return [
+  const imageTypes: string[] = [
     SUPPORTED_MIME_TYPES.IMAGE_JPEG,
     SUPPORTED_MIME_TYPES.IMAGE_PNG,
     SUPPORTED_MIME_TYPES.IMAGE_GIF,
     SUPPORTED_MIME_TYPES.IMAGE_WEBP,
-  ].includes(mimeType as typeof SUPPORTED_MIME_TYPES[keyof typeof SUPPORTED_MIME_TYPES]);
+  ];
+  return imageTypes.includes(mimeType);
 }
 
 /**
