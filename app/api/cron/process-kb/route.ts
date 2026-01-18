@@ -28,8 +28,8 @@ import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
-// Process up to 5 documents per cron run to stay within timeouts
-const BATCH_SIZE = 5;
+// Process up to 2 documents per cron run to stay within timeouts
+const BATCH_SIZE = 2;
 
 /**
  * Main KB processing handler
