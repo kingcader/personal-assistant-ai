@@ -17,13 +17,6 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-// Priority levels for UI
-export const PRIORITY_LEVELS = {
-  NORMAL: 0,
-  HIGH: 5,
-  URGENT: 10,
-} as const;
-
 /**
  * PATCH /api/kb/documents/[id]/priority - Update document priority
  */
@@ -31,6 +24,10 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Priority levels: Normal=0, High=5, Urgent=10
+  const PRIORITY_HIGH = 5;
+  const PRIORITY_URGENT = 10;
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -65,9 +62,9 @@ export async function PATCH(
 
     // Determine priority label for response
     let priorityLabel = 'Normal';
-    if (priority >= PRIORITY_LEVELS.URGENT) {
+    if (priority >= PRIORITY_URGENT) {
       priorityLabel = 'Urgent';
-    } else if (priority >= PRIORITY_LEVELS.HIGH) {
+    } else if (priority >= PRIORITY_HIGH) {
       priorityLabel = 'High';
     }
 
