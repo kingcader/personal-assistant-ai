@@ -3,35 +3,35 @@
  *
  * Syncs files from configured Google Drive folders to the Knowledge Base.
  * Runs every 30 minutes to detect new and modified files.
+ * Uses pagination to avoid timeout - processes 50 files per folder per run.
  *
  * Part of Loop #5: Knowledge Base + RAG System
  *
  * Usage: GET /api/cron/sync-drive
  *
  * Environment:
- * - Requires Google OAuth with drive.readonly scope
+ * - Requires Google OAuth with drive scope
  * - CRON_SECRET for authentication
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  listAllFilesInFolder,
+  listFilesInFolder,
   isSupportedMimeType,
-  getFolderMetadata,
   getFilePath,
-  DriveFile,
 } from '@/lib/google/drive';
 import {
   getEnabledFolders,
   getDocumentByDriveId,
   upsertDocument,
   updateFolderSyncStatus,
-  getDocumentsInFolder,
-  markDocumentsDeleted,
   KBFolder,
 } from '@/lib/supabase/kb-queries';
 
 export const dynamic = 'force-dynamic';
+
+// Maximum files to process per folder per sync run
+const MAX_FILES_PER_SYNC = 50;
 
 /**
  * Main Drive sync handler
@@ -53,7 +53,6 @@ export async function GET(request: NextRequest) {
       files_discovered: 0,
       files_new: 0,
       files_updated: 0,
-      files_deleted: 0,
       files_skipped: 0,
       errors: [] as string[],
     };
@@ -70,27 +69,26 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 3. Sync each folder
+    // 3. Sync each folder (limited number of files per run)
     for (const folder of folders) {
       try {
-        const folderResult = await syncFolder(folder);
+        const folderResult = await syncFolderBatch(folder);
 
         results.folders_synced++;
         results.files_discovered += folderResult.discovered;
         results.files_new += folderResult.new;
         results.files_updated += folderResult.updated;
-        results.files_deleted += folderResult.deleted;
         results.files_skipped += folderResult.skipped;
 
         // Update folder sync status
         await updateFolderSyncStatus(folder.id, {
           last_sync_at: new Date().toISOString(),
           last_sync_error: null,
-          file_count: folderResult.discovered,
+          file_count: folder.file_count + folderResult.new,
         });
 
         console.log(
-          `✅ Synced folder "${folder.folder_name}": ${folderResult.new} new, ${folderResult.updated} updated, ${folderResult.deleted} deleted`
+          `✅ Synced folder "${folder.folder_name}": ${folderResult.new} new, ${folderResult.updated} updated`
         );
       } catch (error) {
         const errorMsg = `Failed to sync folder "${folder.folder_name}": ${
@@ -125,36 +123,36 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Sync a single folder
+ * Sync a batch of files from a folder (non-recursive, paginated)
+ * This processes just one page of files per folder per run to avoid timeouts.
  */
-async function syncFolder(folder: KBFolder): Promise<{
+async function syncFolderBatch(folder: KBFolder): Promise<{
   discovered: number;
   new: number;
   updated: number;
-  deleted: number;
   skipped: number;
 }> {
   const result = {
     discovered: 0,
     new: 0,
     updated: 0,
-    deleted: 0,
     skipped: 0,
   };
 
-  // List all files in the Drive folder (recursively including subfolders)
+  // List files in the Drive folder (one page at a time)
   console.log(`📂 Listing files in "${folder.folder_name}" (${folder.drive_folder_id})...`);
-  const driveFiles = await listAllFilesInFolder(folder.drive_folder_id, true, true);
+  const pageResult = await listFilesInFolder(folder.drive_folder_id, undefined, MAX_FILES_PER_SYNC);
 
-  result.discovered = driveFiles.length;
-  console.log(`📄 Found ${driveFiles.length} supported files`);
-
-  // Track which Drive file IDs we've seen
-  const seenDriveIds = new Set<string>();
+  result.discovered = pageResult.files.length;
+  console.log(`📄 Found ${pageResult.files.length} files in this batch`);
 
   // Process each file
-  for (const file of driveFiles) {
-    seenDriveIds.add(file.id);
+  for (const file of pageResult.files) {
+    // Skip folders
+    if (file.mimeType === 'application/vnd.google-apps.folder') {
+      result.skipped++;
+      continue;
+    }
 
     // Check if file is supported
     if (!isSupportedMimeType(file.mimeType)) {
@@ -201,22 +199,6 @@ async function syncFolder(folder: KBFolder): Promise<{
         console.log(`📝 Updated file: ${file.name}`);
       }
     }
-  }
-
-  // Check for deleted files (files in DB but no longer in Drive)
-  const existingDocs = await getDocumentsInFolder(folder.id);
-  const deletedDriveIds: string[] = [];
-
-  for (const doc of existingDocs) {
-    if (!seenDriveIds.has(doc.drive_file_id) && doc.status !== 'deleted') {
-      deletedDriveIds.push(doc.drive_file_id);
-    }
-  }
-
-  if (deletedDriveIds.length > 0) {
-    await markDocumentsDeleted(deletedDriveIds);
-    result.deleted = deletedDriveIds.length;
-    console.log(`🗑️ Marked ${deletedDriveIds.length} files as deleted`);
   }
 
   return result;
