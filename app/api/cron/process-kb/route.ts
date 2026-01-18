@@ -75,9 +75,9 @@ export async function GET(request: NextRequest) {
         // Mark as processing
         await updateDocumentStatus(doc.id, 'processing');
 
-        // Step 1: Extract text
+        // Step 1: Extract text (with AI vision for images and image-based PDFs)
         console.log(`  ⏳ Extracting text...`);
-        const extraction = await extractTextFromFile(doc.drive_file_id, doc.mime_type);
+        const extraction = await extractTextFromFile(doc.drive_file_id, doc.mime_type, doc.file_name);
 
         if (!extraction.success) {
           throw new Error(`Text extraction failed: ${extraction.error}`);

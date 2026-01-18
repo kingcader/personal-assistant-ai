@@ -425,6 +425,32 @@ export async function markDocumentsDeleted(driveFileIds: string[]): Promise<void
   }
 }
 
+/**
+ * Reset failed documents to pending status for retry
+ * Used when adding new extraction capabilities (like AI vision)
+ */
+export async function resetFailedDocuments(folderId?: string): Promise<number> {
+  let query = (supabase as any)
+    .from('kb_documents')
+    .update({
+      status: 'pending',
+      processing_error: null,
+    })
+    .eq('status', 'failed');
+
+  if (folderId) {
+    query = query.eq('folder_id', folderId);
+  }
+
+  const { data, error } = await query.select('id');
+
+  if (error) {
+    throw new Error(`Failed to reset failed documents: ${error.message}`);
+  }
+
+  return data?.length || 0;
+}
+
 // ============================================
 // CHUNK QUERIES
 // ============================================

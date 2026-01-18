@@ -17,6 +17,7 @@ import {
   updateFolder,
   deleteFolder,
   getDocumentsInFolder,
+  resetFailedDocuments,
   TruthPriority,
 } from '@/lib/supabase/kb-queries';
 import { getDriveFolderUrl, getDriveFileUrl } from '@/lib/google/drive';
@@ -148,6 +149,57 @@ export async function PATCH(
     });
   } catch (error) {
     console.error('Error updating folder:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/kb/folders/[id]
+ * Actions on a folder
+ *
+ * Body: { action: 'retry_failed' }
+ * - retry_failed: Reset all failed documents to pending for reprocessing
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+
+    // Validate folder exists
+    const folder = await getFolderById(id);
+    if (!folder) {
+      return NextResponse.json({ error: 'Folder not found' }, { status: 404 });
+    }
+
+    const { action } = body;
+
+    if (action === 'retry_failed') {
+      // Reset failed documents to pending
+      const count = await resetFailedDocuments(id);
+      console.log(`🔄 Reset ${count} failed documents in folder: ${folder.folder_name}`);
+
+      return NextResponse.json({
+        success: true,
+        message: `Reset ${count} failed documents to pending status`,
+        documentsReset: count,
+      });
+    }
+
+    return NextResponse.json(
+      { error: `Unknown action: ${action}. Valid actions: retry_failed` },
+      { status: 400 }
+    );
+  } catch (error) {
+    console.error('Error performing folder action:', error);
     return NextResponse.json(
       {
         success: false,

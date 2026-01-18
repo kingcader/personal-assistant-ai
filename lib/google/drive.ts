@@ -45,6 +45,7 @@ export interface FileListResult {
  * Supported MIME types for text extraction
  */
 export const SUPPORTED_MIME_TYPES = {
+  // Text-based documents
   GOOGLE_DOC: 'application/vnd.google-apps.document',
   GOOGLE_SHEET: 'application/vnd.google-apps.spreadsheet',
   PDF: 'application/pdf',
@@ -52,6 +53,11 @@ export const SUPPORTED_MIME_TYPES = {
   TEXT_MARKDOWN: 'text/markdown',
   TEXT_CSV: 'text/csv',
   TEXT_HTML: 'text/html',
+  // Images (analyzed with AI vision)
+  IMAGE_JPEG: 'image/jpeg',
+  IMAGE_PNG: 'image/png',
+  IMAGE_GIF: 'image/gif',
+  IMAGE_WEBP: 'image/webp',
 } as const;
 
 /**
@@ -66,8 +72,24 @@ export function isSupportedMimeType(mimeType: string): boolean {
     SUPPORTED_MIME_TYPES.TEXT_MARKDOWN,
     SUPPORTED_MIME_TYPES.TEXT_CSV,
     SUPPORTED_MIME_TYPES.TEXT_HTML,
+    SUPPORTED_MIME_TYPES.IMAGE_JPEG,
+    SUPPORTED_MIME_TYPES.IMAGE_PNG,
+    SUPPORTED_MIME_TYPES.IMAGE_GIF,
+    SUPPORTED_MIME_TYPES.IMAGE_WEBP,
   ];
   return supported.includes(mimeType as typeof SUPPORTED_MIME_TYPES[keyof typeof SUPPORTED_MIME_TYPES]);
+}
+
+/**
+ * Check if a MIME type is an image
+ */
+export function isImageMimeType(mimeType: string): boolean {
+  return [
+    SUPPORTED_MIME_TYPES.IMAGE_JPEG,
+    SUPPORTED_MIME_TYPES.IMAGE_PNG,
+    SUPPORTED_MIME_TYPES.IMAGE_GIF,
+    SUPPORTED_MIME_TYPES.IMAGE_WEBP,
+  ].includes(mimeType as typeof SUPPORTED_MIME_TYPES[keyof typeof SUPPORTED_MIME_TYPES]);
 }
 
 /**

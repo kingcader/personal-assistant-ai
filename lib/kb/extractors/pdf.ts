@@ -2,12 +2,26 @@
  * PDF Text Extractor
  *
  * Extracts text from PDF files using pdf-parse.
+ * Falls back to AI vision for image-based PDFs with no extractable text.
  *
  * Part of Loop #5: Knowledge Base + RAG System
+ * Enhanced in Loop #5.5: AI Vision Fallback
  */
 
 import { downloadFile } from '@/lib/google/drive';
-import type { ExtractionResult } from './index';
+import { analyzePdfWithVision } from './vision';
+
+// Define ExtractionResult locally to avoid circular import
+export interface ExtractionResult {
+  success: boolean;
+  text: string;
+  error?: string;
+  metadata?: {
+    pageCount?: number;
+    wordCount?: number;
+    hasStructure?: boolean;
+  };
+}
 
 // Dynamic import of pdf-parse to handle Node.js environment
 let pdfParse: typeof import('pdf-parse') | null = null;
@@ -88,4 +102,70 @@ function cleanPdfText(text: string): string {
       // Trim overall
       .trim()
   );
+}
+
+/**
+ * Extract PDF with AI vision fallback
+ *
+ * First tries regular text extraction. If the PDF has no extractable text
+ * (image-based PDF), falls back to AI vision analysis.
+ *
+ * @param fileId - Google Drive file ID
+ * @param fileName - File name for AI context
+ * @returns Extracted or AI-analyzed text
+ */
+export async function extractPdfWithVisionFallback(
+  fileId: string,
+  fileName: string
+): Promise<ExtractionResult> {
+  // First try regular extraction
+  const result = await extractPdf(fileId);
+
+  // If successful and has text, return it
+  if (result.success && result.text.trim().length > 50) {
+    return result;
+  }
+
+  // PDF has no extractable text - try AI vision
+  console.log(`📄 PDF "${fileName}" has no text, trying AI vision analysis...`);
+
+  try {
+    // Download the PDF again for vision analysis
+    const buffer = await downloadFile(fileId);
+
+    // Check file size (20MB limit for vision API)
+    const maxSizeBytes = 20 * 1024 * 1024;
+    if (buffer.length > maxSizeBytes) {
+      return {
+        success: false,
+        text: '',
+        error: `PDF too large for AI vision (${Math.round(buffer.length / 1024 / 1024)}MB). Max 20MB.`,
+      };
+    }
+
+    // Analyze with AI vision
+    const aiDescription = await analyzePdfWithVision(buffer, fileName);
+
+    const wordCount = aiDescription
+      .trim()
+      .split(/\s+/)
+      .filter((w) => w.length > 0).length;
+
+    return {
+      success: true,
+      text: aiDescription,
+      metadata: {
+        wordCount,
+        hasStructure: true,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`❌ AI vision fallback failed for PDF ${fileName}:`, errorMessage);
+    return {
+      success: false,
+      text: '',
+      error: `Text extraction empty and AI vision failed: ${errorMessage}`,
+    };
+  }
 }

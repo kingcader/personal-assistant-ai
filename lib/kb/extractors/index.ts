@@ -2,15 +2,18 @@
  * Text Extraction Router
  *
  * Routes file extraction to the appropriate handler based on MIME type.
+ * Includes AI vision analysis for images and image-based PDFs.
  *
  * Part of Loop #5: Knowledge Base + RAG System
+ * Enhanced in Loop #5.5: AI Vision
  */
 
-import { SUPPORTED_MIME_TYPES } from '@/lib/google/drive';
+import { SUPPORTED_MIME_TYPES, isImageMimeType } from '@/lib/google/drive';
 import { extractGoogleDoc } from './google-docs';
-import { extractPdf } from './pdf';
+import { extractPdf, extractPdfWithVisionFallback } from './pdf';
 import { extractTextFile } from './text';
 import { extractGoogleSheet } from './sheets';
+import { extractImageWithVision } from './vision';
 
 /**
  * Result of text extraction
@@ -31,13 +34,28 @@ export interface ExtractionResult {
  *
  * @param fileId - Google Drive file ID
  * @param mimeType - MIME type of the file
+ * @param fileName - Optional file name for better AI context
  * @returns Extracted text content
  */
 export async function extractTextFromFile(
   fileId: string,
-  mimeType: string
+  mimeType: string,
+  fileName?: string
 ): Promise<ExtractionResult> {
   try {
+    // Handle images with AI vision
+    if (isImageMimeType(mimeType)) {
+      const result = await extractImageWithVision(fileId, mimeType, fileName || 'image');
+      return {
+        success: result.success,
+        text: result.text,
+        error: result.error,
+        metadata: {
+          wordCount: countWords(result.text),
+        },
+      };
+    }
+
     switch (mimeType) {
       case SUPPORTED_MIME_TYPES.GOOGLE_DOC:
         return await extractGoogleDoc(fileId);
@@ -46,7 +64,8 @@ export async function extractTextFromFile(
         return await extractGoogleSheet(fileId);
 
       case SUPPORTED_MIME_TYPES.PDF:
-        return await extractPdf(fileId);
+        // Use PDF extractor with AI vision fallback for image-based PDFs
+        return await extractPdfWithVisionFallback(fileId, fileName || 'document.pdf');
 
       case SUPPORTED_MIME_TYPES.TEXT_PLAIN:
       case SUPPORTED_MIME_TYPES.TEXT_MARKDOWN:
