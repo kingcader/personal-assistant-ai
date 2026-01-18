@@ -108,11 +108,12 @@ function cleanPdfText(text: string): string {
  * Extract PDF with AI vision fallback
  *
  * First tries regular text extraction. If the PDF has no extractable text
- * (image-based PDF), falls back to AI vision analysis.
+ * (image-based PDF like architectural renderings), creates a minimal
+ * searchable entry based on the filename.
  *
  * @param fileId - Google Drive file ID
  * @param fileName - File name for AI context
- * @returns Extracted or AI-analyzed text
+ * @returns Extracted text or minimal description for image-based PDFs
  */
 export async function extractPdfWithVisionFallback(
   fileId: string,
@@ -126,46 +127,29 @@ export async function extractPdfWithVisionFallback(
     return result;
   }
 
-  // PDF has no extractable text - try AI vision
-  console.log(`📄 PDF "${fileName}" has no text, trying AI vision analysis...`);
+  // PDF has no extractable text - this is likely an image-based PDF
+  // (architectural renderings, scanned documents, etc.)
+  console.log(`📄 PDF "${fileName}" has no extractable text (likely image-based)`);
 
-  try {
-    // Download the PDF again for vision analysis
-    const buffer = await downloadFile(fileId);
+  // Create a minimal searchable entry based on filename
+  // This allows the document to be found by name in search
+  const baseName = fileName.replace(/\.pdf$/i, '');
+  const description = `[Image-Based PDF Document]
 
-    // Check file size (20MB limit for vision API)
-    const maxSizeBytes = 20 * 1024 * 1024;
-    if (buffer.length > maxSizeBytes) {
-      return {
-        success: false,
-        text: '',
-        error: `PDF too large for AI vision (${Math.round(buffer.length / 1024 / 1024)}MB). Max 20MB.`,
-      };
-    }
+File: ${fileName}
 
-    // Analyze with AI vision
-    const aiDescription = await analyzePdfWithVision(buffer, fileName);
+This PDF contains visual content (such as architectural renderings, diagrams, or scanned images) rather than extractable text.
 
-    const wordCount = aiDescription
-      .trim()
-      .split(/\s+/)
-      .filter((w) => w.length > 0).length;
+Document name suggests: ${baseName.replace(/[-_]/g, ' ')}
 
-    return {
-      success: true,
-      text: aiDescription,
-      metadata: {
-        wordCount,
-        hasStructure: true,
-      },
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`❌ AI vision fallback failed for PDF ${fileName}:`, errorMessage);
-    return {
-      success: false,
-      text: '',
-      error: `Text extraction empty and AI vision failed: ${errorMessage}`,
-    };
-  }
+Note: This document can be found by searching for its filename. Click the Drive link to view the actual visual content.`;
+
+  return {
+    success: true,
+    text: description,
+    metadata: {
+      wordCount: description.split(/\s+/).length,
+      hasStructure: false,
+    },
+  };
 }
