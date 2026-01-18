@@ -3,7 +3,7 @@
  *
  * Syncs files from configured Google Drive folders to the Knowledge Base.
  * Runs every 30 minutes to detect new and modified files.
- * Uses pagination to avoid timeout - processes 50 files per folder per run.
+ * Processes ONE folder per run to stay within cron-job.org's 30s timeout.
  *
  * Part of Loop #5: Knowledge Base + RAG System
  *
@@ -18,7 +18,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   listFilesInFolder,
   isSupportedMimeType,
-  getFilePath,
 } from '@/lib/google/drive';
 import {
   getEnabledFolders,
@@ -30,9 +29,11 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+// Process only 1 folder per cron run to stay within 30s timeout
+const FOLDERS_PER_RUN = 1;
+
 // Maximum files to process per folder per sync run
-// Keep low to complete within cron-job.org's 30s timeout
-const MAX_FILES_PER_SYNC = 20;
+const MAX_FILES_PER_SYNC = 15;
 
 /**
  * Main Drive sync handler
@@ -58,11 +59,10 @@ export async function GET(request: NextRequest) {
       errors: [] as string[],
     };
 
-    // 2. Get all enabled folders
-    const folders = await getEnabledFolders();
-    console.log(`📂 Found ${folders.length} enabled folders to sync`);
+    // 2. Get all enabled folders, sorted by last_sync_at (oldest first for round-robin)
+    const allFolders = await getEnabledFolders();
 
-    if (folders.length === 0) {
+    if (allFolders.length === 0) {
       return NextResponse.json({
         success: true,
         message: 'No folders configured for sync',
@@ -70,9 +70,22 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 3. Sync each folder (limited number of files per run)
+    // Sort by last_sync_at (null first, then oldest)
+    const sortedFolders = allFolders.sort((a, b) => {
+      if (!a.last_sync_at && !b.last_sync_at) return 0;
+      if (!a.last_sync_at) return -1;
+      if (!b.last_sync_at) return 1;
+      return new Date(a.last_sync_at).getTime() - new Date(b.last_sync_at).getTime();
+    });
+
+    // Take only FOLDERS_PER_RUN folders
+    const folders = sortedFolders.slice(0, FOLDERS_PER_RUN);
+    console.log(`📂 Processing ${folders.length} of ${allFolders.length} folders (oldest first)`);
+
+    // 3. Sync the selected folder(s)
     for (const folder of folders) {
       try {
+        console.log(`📁 Syncing: ${folder.folder_name}`);
         const folderResult = await syncFolderBatch(folder);
 
         results.folders_synced++;
@@ -89,7 +102,7 @@ export async function GET(request: NextRequest) {
         });
 
         console.log(
-          `✅ Synced folder "${folder.folder_name}": ${folderResult.new} new, ${folderResult.updated} updated`
+          `✅ Synced "${folder.folder_name}": ${folderResult.new} new, ${folderResult.updated} updated`
         );
       } catch (error) {
         const errorMsg = `Failed to sync folder "${folder.folder_name}": ${
@@ -146,29 +159,25 @@ async function syncFolderBatch(folder: KBFolder): Promise<{
 
   while (folderQueue.length > 0 && filesProcessed < MAX_FILES_PER_SYNC) {
     const currentFolderId = folderQueue.shift()!;
-    console.log(`📂 Processing folder: ${currentFolderId}...`);
 
-    // List files in the current folder
-    const pageResult = await listFilesInFolder(currentFolderId, undefined, 100);
+    // List files in the current folder (limit to 50 to reduce API response size)
+    const pageResult = await listFilesInFolder(currentFolderId, undefined, 50);
     result.discovered += pageResult.files.length;
 
     for (const file of pageResult.files) {
       if (filesProcessed >= MAX_FILES_PER_SYNC) {
-        console.log(`⏸️ Reached batch limit of ${MAX_FILES_PER_SYNC} files`);
         break;
       }
 
       // If it's a subfolder, add to queue for later processing
       if (file.mimeType === 'application/vnd.google-apps.folder') {
         folderQueue.push(file.id);
-        console.log(`📁 Queued subfolder: ${file.name}`);
         continue;
       }
 
       // Check if file is supported
       if (!isSupportedMimeType(file.mimeType)) {
         result.skipped++;
-        console.log(`⏭️ Skipped unsupported: ${file.name} (${file.mimeType})`);
         continue;
       }
 
@@ -178,19 +187,18 @@ async function syncFolderBatch(folder: KBFolder): Promise<{
       const existingDoc = await getDocumentByDriveId(file.id);
 
       if (!existingDoc) {
-        // New file - create document
+        // New file - create document (skip getFilePath to save API calls)
         await upsertDocument({
           folder_id: folder.id,
           drive_file_id: file.id,
           file_name: file.name,
-          file_path: await getFilePath(file.id),
+          file_path: undefined, // Skip expensive getFilePath call
           mime_type: file.mimeType,
           drive_modified_at: file.modifiedTime.toISOString(),
           file_size_bytes: file.size || undefined,
           truth_priority: folder.truth_priority,
         });
         result.new++;
-        console.log(`📄 New file: ${file.name}`);
       } else {
         // Check if file has been modified
         const existingModified = existingDoc.drive_modified_at
@@ -203,20 +211,18 @@ async function syncFolderBatch(folder: KBFolder): Promise<{
             folder_id: folder.id,
             drive_file_id: file.id,
             file_name: file.name,
-            file_path: await getFilePath(file.id),
+            file_path: existingDoc.file_path || undefined, // Keep existing path
             mime_type: file.mimeType,
             drive_modified_at: file.modifiedTime.toISOString(),
             file_size_bytes: file.size || undefined,
             truth_priority: folder.truth_priority,
           });
           result.updated++;
-          console.log(`📝 Updated file: ${file.name}`);
         }
       }
     }
   }
 
-  console.log(`📊 Processed ${filesProcessed} files, ${folderQueue.length} folders remaining in queue`);
   return result;
 }
 
