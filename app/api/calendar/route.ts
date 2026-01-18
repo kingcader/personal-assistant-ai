@@ -34,6 +34,9 @@ export interface CalendarTask {
   status: 'todo' | 'in_progress' | 'completed' | 'cancelled';
   email_subject: string | null;
   created_at: string;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  is_scheduled: boolean;
 }
 
 export interface CalendarEventWithPrep extends DBCalendarEvent {
@@ -147,16 +150,25 @@ async function fetchTasksInRange(
       priority,
       status,
       created_at,
+      scheduled_start,
+      scheduled_end,
+      is_scheduled,
       emails (subject)
     `)
     .order('due_date', { ascending: true, nullsFirst: false });
 
-  // Filter by due date range (include tasks with no due date)
+  // Filter by due date OR scheduled time in range (include tasks with no due date)
+  // Include tasks where:
+  // - due_date is in range, OR
+  // - scheduled_start is in range, OR
+  // - neither is set (show unscheduled tasks without due dates)
+  const startISO = startDate.toISOString();
+  const endISO = endDate.toISOString();
   query = query.or(
-    `due_date.gte.${startDate.toISOString()},due_date.is.null`
+    `due_date.gte.${startISO},due_date.is.null,scheduled_start.gte.${startISO}`
   );
   query = query.or(
-    `due_date.lte.${endDate.toISOString()},due_date.is.null`
+    `due_date.lte.${endISO},due_date.is.null,scheduled_start.lte.${endISO}`
   );
 
   // Filter out completed/cancelled unless requested
@@ -177,5 +189,8 @@ async function fetchTasksInRange(
     status: task.status,
     email_subject: task.emails?.subject || null,
     created_at: task.created_at,
+    scheduled_start: task.scheduled_start || null,
+    scheduled_end: task.scheduled_end || null,
+    is_scheduled: task.is_scheduled || false,
   }));
 }
