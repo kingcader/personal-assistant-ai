@@ -4,6 +4,18 @@
   "functions": {
     "app/api/cron/process-emails/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/sync-drive/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/process-kb/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/sync-threads/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/sync-calendar/route.ts": {
+      "maxDuration": 60
     }
   }
 }
