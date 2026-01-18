@@ -36,6 +36,9 @@ import type { ThreadParticipant } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
+// Limit threads to process per run to stay within cron-job.org's 30s timeout
+const MAX_THREADS_PER_SYNC = 10;
+
 /**
  * Main thread sync handler
  */
@@ -61,11 +64,13 @@ export async function GET(request: NextRequest) {
       errors: [] as string[],
     };
 
-    // 2. First, fetch sent emails for all Work threads
+    // 2. First, fetch sent emails for Work threads (limited batch)
     // This ensures we have complete thread data for waiting-on detection
     try {
-      const threadIds = await getUniqueThreadIds();
-      console.log(`📨 Fetching complete thread data for ${threadIds.length} threads...`);
+      const allThreadIds = await getUniqueThreadIds();
+      // Limit to batch size to stay within timeout
+      const threadIds = allThreadIds.slice(0, MAX_THREADS_PER_SYNC);
+      console.log(`📨 Fetching thread data for ${threadIds.length} of ${allThreadIds.length} threads...`);
 
       if (threadIds.length > 0) {
         // Fetch all messages in these threads (including sent)

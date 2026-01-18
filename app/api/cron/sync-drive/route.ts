@@ -31,7 +31,8 @@ import {
 export const dynamic = 'force-dynamic';
 
 // Maximum files to process per folder per sync run
-const MAX_FILES_PER_SYNC = 50;
+// Keep low to complete within cron-job.org's 30s timeout
+const MAX_FILES_PER_SYNC = 20;
 
 /**
  * Main Drive sync handler
