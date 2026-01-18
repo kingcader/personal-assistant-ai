@@ -80,26 +80,37 @@ export async function GET(request: NextRequest) {
         // Step 1: Extract text (with AI vision for images and image-based PDFs)
         console.log(`  ⏳ Extracting text...`);
 
-        // Skip virtual documents without drive_file_id (they need different processing)
-        if (!doc.drive_file_id) {
-          throw new Error('Virtual document processing not yet implemented');
+        let extractedText: string;
+        let contentHash: string;
+
+        // Check if this is a virtual document (website page) with pre-extracted text
+        if (doc.is_virtual && doc.extracted_text) {
+          console.log(`  📄 Using pre-extracted text from crawler`);
+          extractedText = doc.extracted_text;
+          contentHash = doc.content_hash || crypto
+            .createHash('sha256')
+            .update(extractedText)
+            .digest('hex');
+        } else if (doc.drive_file_id) {
+          // Regular document from Google Drive
+          const extraction = await extractTextFromFile(doc.drive_file_id, doc.mime_type, doc.file_name);
+
+          if (!extraction.success) {
+            throw new Error(`Text extraction failed: ${extraction.error}`);
+          }
+
+          if (!extraction.text.trim()) {
+            throw new Error('Extracted text is empty');
+          }
+
+          extractedText = extraction.text;
+          contentHash = crypto
+            .createHash('sha256')
+            .update(extractedText)
+            .digest('hex');
+        } else {
+          throw new Error('Document has no content source (no drive_file_id and no extracted_text)');
         }
-
-        const extraction = await extractTextFromFile(doc.drive_file_id, doc.mime_type, doc.file_name);
-
-        if (!extraction.success) {
-          throw new Error(`Text extraction failed: ${extraction.error}`);
-        }
-
-        if (!extraction.text.trim()) {
-          throw new Error('Extracted text is empty');
-        }
-
-        // Compute content hash
-        const contentHash = crypto
-          .createHash('sha256')
-          .update(extraction.text)
-          .digest('hex');
 
         // Check if content has changed (if re-processing)
         const existingDoc = await getDocumentById(doc.id);
@@ -108,13 +119,15 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // Save extracted text
-        await updateDocumentExtractedText(doc.id, extraction.text, contentHash);
-        console.log(`  ✅ Extracted ${countWords(extraction.text)} words`);
+        // Save extracted text (for Drive docs, or update hash for virtual docs)
+        if (!doc.is_virtual) {
+          await updateDocumentExtractedText(doc.id, extractedText, contentHash);
+        }
+        console.log(`  ✅ Extracted ${countWords(extractedText)} words`);
 
         // Step 2: Chunk the text
         console.log(`  ⏳ Chunking text...`);
-        const chunks = chunkText(extraction.text, DEFAULT_CHUNK_CONFIG);
+        const chunks = chunkText(extractedText, DEFAULT_CHUNK_CONFIG);
         console.log(`  ✅ Created ${chunks.length} chunks`);
 
         if (chunks.length === 0) {
@@ -145,7 +158,7 @@ export async function GET(request: NextRequest) {
         console.log(`  ⏳ Generating summary...`);
         try {
           const summary = await generateDocumentSummary(
-            extraction.text,
+            extractedText,
             doc.file_name,
             doc.mime_type
           );

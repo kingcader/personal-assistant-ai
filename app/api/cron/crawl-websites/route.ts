@@ -10,6 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import {
   getWebsitesToCrawl,
   updateWebsiteCrawlStatus,
@@ -106,11 +107,19 @@ export async function GET(request: NextRequest) {
           try {
             const fileName = page.title || urlToFileName(page.url);
 
+            // Compute content hash for change detection
+            const contentHash = crypto
+              .createHash('sha256')
+              .update(page.content)
+              .digest('hex');
+
             await upsertVirtualDocument({
               website_id: website.id,
               source_url: page.url,
               file_name: fileName,
               mime_type: 'text/html',
+              extracted_text: page.content,
+              content_hash: contentHash,
             });
 
             documentsCreated++;

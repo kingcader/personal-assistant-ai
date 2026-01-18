@@ -1130,6 +1130,8 @@ export async function createVirtualDocument(params: {
   source_url: string;
   file_name: string;
   mime_type: string;
+  extracted_text?: string;
+  content_hash?: string;
 }): Promise<KBDocument> {
   const { data, error } = await (supabase as any)
     .from('kb_documents')
@@ -1142,6 +1144,8 @@ export async function createVirtualDocument(params: {
       status: 'pending',
       folder_id: null,
       drive_file_id: null,
+      extracted_text: params.extracted_text || null,
+      content_hash: params.content_hash || null,
     })
     .select()
     .single();
@@ -1161,6 +1165,8 @@ export async function upsertVirtualDocument(params: {
   source_url: string;
   file_name: string;
   mime_type: string;
+  extracted_text?: string;
+  content_hash?: string;
 }): Promise<KBDocument> {
   // First, try to find existing document
   const { data: existing } = await (supabase as any)
@@ -1171,12 +1177,19 @@ export async function upsertVirtualDocument(params: {
     .single();
 
   if (existing) {
-    // Update to pending for re-processing
+    // Check if content has changed (skip if same hash)
+    if (params.content_hash && existing.content_hash === params.content_hash) {
+      return existing as KBDocument;
+    }
+
+    // Update with new content and mark for re-processing
     const { data, error } = await (supabase as any)
       .from('kb_documents')
       .update({
         file_name: params.file_name,
         status: 'pending',
+        extracted_text: params.extracted_text || existing.extracted_text,
+        content_hash: params.content_hash || existing.content_hash,
       })
       .eq('id', existing.id)
       .select()
