@@ -454,12 +454,13 @@ export async function createChunks(
   }
 
   // Insert new chunks
+  // Format embedding as pgvector literal: [0.1, 0.2, ...]
   const chunkData = chunks.map((chunk) => ({
     document_id: documentId,
     content: chunk.content,
     chunk_index: chunk.chunk_index,
     section_title: chunk.section_title,
-    embedding: JSON.stringify(chunk.embedding), // pgvector accepts JSON array
+    embedding: `[${chunk.embedding.join(',')}]`,
     truth_priority: chunk.truth_priority,
     token_count: chunk.token_count,
   }));
@@ -525,8 +526,11 @@ export async function searchChunks(params: {
   } = params;
 
   // Call the match_kb_chunks function
+  // Format embedding as a PostgreSQL vector literal: [0.1, 0.2, ...] -> '[0.1,0.2,...]'
+  const embeddingString = `[${queryEmbedding.join(',')}]`;
+
   const { data, error } = await (supabase as any).rpc('match_kb_chunks', {
-    query_embedding: JSON.stringify(queryEmbedding),
+    query_embedding: embeddingString,
     match_threshold: threshold,
     match_count: limit,
     filter_truth_priority: truthPriorityFilter || null,
