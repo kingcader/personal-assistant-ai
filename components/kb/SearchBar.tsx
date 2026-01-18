@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+
+export type SearchMode = 'answer' | 'search';
 
 interface SearchBarProps {
   value: string;
   onChange: (value: string) => void;
-  onSearch: (query: string) => void;
+  onSearch: (query: string, mode: SearchMode) => void;
   onClear: () => void;
   loading: boolean;
+  mode?: SearchMode;
+  onModeChange?: (mode: SearchMode) => void;
 }
 
 export default function SearchBar({
@@ -16,15 +20,32 @@ export default function SearchBar({
   onSearch,
   onClear,
   loading,
+  mode = 'answer',
+  onModeChange,
 }: SearchBarProps) {
+  const [currentMode, setCurrentMode] = useState<SearchMode>(mode);
+
+  // Sync with external mode changes
+  useEffect(() => {
+    setCurrentMode(mode);
+  }, [mode]);
+
+  const handleModeChange = useCallback(
+    (newMode: SearchMode) => {
+      setCurrentMode(newMode);
+      onModeChange?.(newMode);
+    },
+    [onModeChange]
+  );
+
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
       if (value.trim()) {
-        onSearch(value.trim());
+        onSearch(value.trim(), currentMode);
       }
     },
-    [value, onSearch]
+    [value, onSearch, currentMode]
   );
 
   const handleKeyDown = useCallback(
@@ -38,6 +59,40 @@ export default function SearchBar({
 
   return (
     <form onSubmit={handleSubmit} className="relative">
+      {/* Mode Toggle */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-sm text-gray-500">Mode:</span>
+        <div className="flex bg-gray-100 rounded-lg p-0.5">
+          <button
+            type="button"
+            onClick={() => handleModeChange('answer')}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              currentMode === 'answer'
+                ? 'bg-white text-blue-600 shadow-sm font-medium'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Get Answer
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange('search')}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              currentMode === 'search'
+                ? 'bg-white text-blue-600 shadow-sm font-medium'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Search Documents
+          </button>
+        </div>
+        <span className="text-xs text-gray-400 ml-2">
+          {currentMode === 'answer'
+            ? 'AI synthesizes answer with citations'
+            : 'Returns raw document chunks'}
+        </span>
+      </div>
+
       <div className="relative">
         {/* Search Icon */}
         <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -130,7 +185,7 @@ export default function SearchBar({
           type="button"
           onClick={() => {
             onChange('What are the key terms of the agreement?');
-            onSearch('What are the key terms of the agreement?');
+            onSearch('What are the key terms of the agreement?', currentMode);
           }}
           className="text-blue-600 hover:text-blue-800 mr-3"
         >
@@ -140,7 +195,7 @@ export default function SearchBar({
           type="button"
           onClick={() => {
             onChange('investor contacts');
-            onSearch('investor contacts');
+            onSearch('investor contacts', currentMode);
           }}
           className="text-blue-600 hover:text-blue-800 mr-3"
         >
@@ -150,7 +205,7 @@ export default function SearchBar({
           type="button"
           onClick={() => {
             onChange('pricing and payment terms');
-            onSearch('pricing and payment terms');
+            onSearch('pricing and payment terms', currentMode);
           }}
           className="text-blue-600 hover:text-blue-800"
         >

@@ -16,7 +16,7 @@ import {
   getFolderById,
   updateFolder,
   deleteFolder,
-  getDocumentsInFolder,
+  getDocumentsWithCategories,
   resetFailedDocuments,
   TruthPriority,
 } from '@/lib/supabase/kb-queries';
@@ -40,13 +40,13 @@ export async function GET(
       return NextResponse.json({ error: 'Folder not found' }, { status: 404 });
     }
 
-    // Get documents in this folder
-    const documents = await getDocumentsInFolder(id);
+    // Get documents in this folder with their categories
+    const documents = await getDocumentsWithCategories(id);
 
     // Add Drive URLs
     const documentsWithUrls = documents.map((doc) => ({
       ...doc,
-      driveUrl: getDriveFileUrl(doc.drive_file_id),
+      driveUrl: doc.drive_file_id ? getDriveFileUrl(doc.drive_file_id) : null,
     }));
 
     return NextResponse.json({

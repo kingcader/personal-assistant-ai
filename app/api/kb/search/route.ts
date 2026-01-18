@@ -32,6 +32,7 @@ interface SearchResultResponse {
   similarity: number;
   truthPriority: string | null;
   driveUrl: string;
+  summary: string | null;
 }
 
 /**
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
       similarity: result.similarity,
       truthPriority: result.truth_priority,
       driveUrl: getDriveFileUrl(result.drive_file_id),
+      summary: result.summary || null,
     }));
 
     // Log the search query for analytics

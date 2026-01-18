@@ -230,57 +230,60 @@ export default function WeekGrid({
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      {/* Header with day names */}
-      <div className="grid grid-cols-8 border-b border-gray-200">
-        {/* Time column header */}
-        <div className="p-2 text-xs text-gray-500 text-center border-r border-gray-100" />
+      {/* Scrollable container for mobile */}
+      <div className="overflow-x-auto">
+        <div className="min-w-[640px]">
+          {/* Header with day names */}
+          <div className="grid grid-cols-8 border-b border-gray-200">
+            {/* Time column header */}
+            <div className="p-2 text-xs text-gray-500 text-center border-r border-gray-100 w-14 flex-shrink-0" />
 
-        {/* Day headers */}
-        {weekDays.map((day) => (
-          <div
-            key={day.toISOString()}
-            className={`p-2 text-center border-r border-gray-100 last:border-r-0 ${
-              isToday(day) ? 'bg-blue-50' : ''
-            }`}
-          >
-            <div className={`text-sm font-medium ${isToday(day) ? 'text-blue-600' : 'text-gray-700'}`}>
-              {formatDayHeader(day)}
-            </div>
+            {/* Day headers */}
+            {weekDays.map((day) => (
+              <div
+                key={day.toISOString()}
+                className={`p-2 text-center border-r border-gray-100 last:border-r-0 ${
+                  isToday(day) ? 'bg-blue-50' : ''
+                }`}
+              >
+                <div className={`text-sm font-medium ${isToday(day) ? 'text-blue-600' : 'text-gray-700'}`}>
+                  {formatDayHeader(day)}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* All-day section */}
-      <div className="grid grid-cols-8 border-b border-gray-200">
-        <div className="p-1 text-xs text-gray-500 text-center border-r border-gray-100">
-          All day
-        </div>
-        {weekDays.map((day) => {
-          const dayKey = day.toISOString().split('T')[0];
-          const allDayItems = getAllDayItems(dayKey);
-          return (
-            <div
-              key={dayKey}
-              className={`min-h-[32px] p-0.5 border-r border-gray-100 last:border-r-0 ${
-                isToday(day) ? 'bg-blue-50/50' : ''
-              }`}
-            >
-              {allDayItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => onEventClick?.(item)}
-                  className={`w-full text-xs px-1 py-0.5 rounded truncate text-left mb-0.5 ${getEventColor(item)} border hover:opacity-80`}
-                >
-                  {item.type === 'task' && '•'} {item.title}
-                </button>
-              ))}
+          {/* All-day section */}
+          <div className="grid grid-cols-8 border-b border-gray-200">
+            <div className="p-1 text-xs text-gray-500 text-center border-r border-gray-100 w-14 flex-shrink-0">
+              All day
             </div>
-          );
-        })}
-      </div>
+            {weekDays.map((day) => {
+              const dayKey = day.toISOString().split('T')[0];
+              const allDayItems = getAllDayItems(dayKey);
+              return (
+                <div
+                  key={dayKey}
+                  className={`min-h-[32px] p-0.5 border-r border-gray-100 last:border-r-0 ${
+                    isToday(day) ? 'bg-blue-50/50' : ''
+                  }`}
+                >
+                  {allDayItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => onEventClick?.(item)}
+                      className={`w-full text-xs px-1 py-0.5 rounded truncate text-left mb-0.5 ${getEventColor(item)} border hover:opacity-80`}
+                    >
+                      {item.type === 'task' && '•'} {item.title}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
 
-      {/* Time grid */}
-      <div className="grid grid-cols-8 overflow-y-auto" style={{ height: '500px' }}>
+          {/* Time grid */}
+          <div className="grid grid-cols-8 overflow-y-auto" style={{ height: '500px' }}>
         {/* Time labels */}
         <div className="border-r border-gray-100">
           {HOURS.map((hour) => (
@@ -369,6 +372,8 @@ export default function WeekGrid({
             </div>
           );
         })}
+          </div>
+        </div>
       </div>
     </div>
   );

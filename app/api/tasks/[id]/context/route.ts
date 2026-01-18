@@ -58,7 +58,7 @@ export async function GET(
       filePath: item.document.file_path,
       relevanceScore: item.relevance_score,
       autoLinked: item.auto_linked,
-      driveUrl: getDriveFileUrl(item.document.drive_file_id),
+      driveUrl: item.document.drive_file_id ? getDriveFileUrl(item.document.drive_file_id) : null,
       status: item.document.status,
     }));
 
@@ -136,7 +136,7 @@ export async function POST(
     // Group by document (a document may have multiple matching chunks)
     const documentScores = new Map<
       string,
-      { maxSimilarity: number; fileName: string; driveFileId: string }
+      { maxSimilarity: number; fileName: string; driveFileId: string | null }
     >();
 
     for (const result of searchResults) {
@@ -156,7 +156,7 @@ export async function POST(
         documentId: docId,
         similarity: data.maxSimilarity,
         fileName: data.fileName,
-        driveUrl: getDriveFileUrl(data.driveFileId),
+        driveUrl: data.driveFileId ? getDriveFileUrl(data.driveFileId) : null,
       }))
       .sort((a, b) => b.similarity - a.similarity);
 

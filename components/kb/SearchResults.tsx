@@ -9,6 +9,7 @@ interface SearchResult {
   similarity: number;
   truthPriority: string | null;
   driveUrl: string;
+  summary?: string | null;
 }
 
 interface SearchResultsProps {
@@ -136,6 +137,15 @@ export default function SearchResults({
                 </span>
               </div>
             </div>
+
+            {/* Document Summary */}
+            {result.summary && (
+              <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
+                <p className="text-sm text-blue-800 italic">
+                  {result.summary}
+                </p>
+              </div>
+            )}
 
             {/* Result Content */}
             <div className="px-4 py-3">

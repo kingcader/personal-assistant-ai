@@ -21,9 +21,11 @@ import {
   getPendingDocuments,
   updateDocumentStatus,
   updateDocumentExtractedText,
+  updateDocumentSummary,
   createChunks,
   getDocumentById,
 } from '@/lib/supabase/kb-queries';
+import { generateDocumentSummary } from '@/lib/ai/summary-generation-prompt';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -77,6 +79,12 @@ export async function GET(request: NextRequest) {
 
         // Step 1: Extract text (with AI vision for images and image-based PDFs)
         console.log(`  ⏳ Extracting text...`);
+
+        // Skip virtual documents without drive_file_id (they need different processing)
+        if (!doc.drive_file_id) {
+          throw new Error('Virtual document processing not yet implemented');
+        }
+
         const extraction = await extractTextFromFile(doc.drive_file_id, doc.mime_type, doc.file_name);
 
         if (!extraction.success) {
@@ -132,6 +140,23 @@ export async function GET(request: NextRequest) {
 
         await createChunks(doc.id, chunkData);
         results.chunks_created += chunks.length;
+
+        // Step 5: Generate document summary
+        console.log(`  ⏳ Generating summary...`);
+        try {
+          const summary = await generateDocumentSummary(
+            extraction.text,
+            doc.file_name,
+            doc.mime_type
+          );
+          if (summary) {
+            await updateDocumentSummary(doc.id, summary);
+            console.log(`  ✅ Summary generated`);
+          }
+        } catch (summaryError) {
+          // Summary generation is non-critical, log but don't fail
+          console.warn(`  ⚠️ Summary generation failed:`, summaryError);
+        }
 
         // Success!
         results.documents_indexed++;

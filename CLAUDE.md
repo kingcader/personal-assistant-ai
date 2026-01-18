@@ -117,6 +117,46 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `/api/cron/sync-drive` - Sync files from Drive (every 30 min)
 - `/api/cron/process-kb` - Extract, chunk, embed (every 10 min)
 
+### Loop 5.5 - COMPLETED
+**RAG System Improvements**
+Enhances Knowledge Base with answer generation, summaries, website crawling, and priority controls.
+
+**Phase 1: Answer Generation with Citations**
+- AI synthesizes grounded answers from KB chunks with inline citations
+- `lib/ai/answer-generation-prompt.ts` - System prompt enforcing citation requirements
+- `app/api/kb/answer/route.ts` - POST endpoint for answer generation
+- `components/kb/AnswerPanel.tsx` - Displays answers with collapsible citations
+- SearchBar mode toggle: "Get Answer" vs "Search Documents"
+- Confidence levels (high/medium/low) based on source coverage
+
+**Phase 2: Document Summaries**
+- AI generates 2-3 sentence summaries during indexing
+- `lib/ai/summary-generation-prompt.ts` - Concise summary generation
+- `app/api/cron/process-kb/route.ts` - Now generates summaries after indexing
+- Summaries displayed in search results (blue highlight box)
+- `scripts/backfill-summaries.ts` - Backfill script for existing documents
+
+**Phase 3: Website Crawler**
+- Crawl company websites and add to RAG system
+- `lib/kb/crawler.ts` - Crawler with robots.txt support, rate limiting (1 req/sec)
+- `lib/kb/extractors/html.ts` - HTML extraction using cheerio
+- `app/api/cron/crawl-websites/route.ts` - Cron endpoint (every 6 hours)
+- `app/api/kb/websites/route.ts` - CRUD operations for websites
+- `app/api/kb/websites/[id]/route.ts` - Individual website management
+- `components/kb/WebsiteList.tsx` - Website management UI
+- `components/kb/AddWebsiteModal.tsx` - Add website modal
+- Websites tab in knowledge-base page
+
+**Phase 4: Document Priority UI**
+- Set processing priority from UI (Normal/High/Urgent)
+- `app/api/kb/documents/[id]/priority/route.ts` - PATCH endpoint
+- Priority dropdown in DocumentList for pending/failed documents
+- Visual badges for high-priority documents
+- Higher priority = processed first by cron job
+
+**New Dependencies:**
+- `cheerio` - HTML parsing for website crawler
+
 ### Loop 6 - PLANNED
 **Entity System (People/Orgs)**
 - Track people and organizations across emails, documents, tasks
@@ -203,10 +243,15 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `app/api/calendar/route.ts` - Unified calendar data API (Loop 4)
 - `app/api/calendar/[eventId]/prep/route.ts` - Get/generate AI prep packets (Loop 4)
 - `app/api/cron/sync-drive/route.ts` - Sync Google Drive folders (Loop 5)
-- `app/api/cron/process-kb/route.ts` - Process pending documents (Loop 5)
+- `app/api/cron/process-kb/route.ts` - Process pending documents + generate summaries (Loop 5/5.5)
+- `app/api/cron/crawl-websites/route.ts` - Crawl websites for KB (Loop 5.5)
 - `app/api/kb/search/route.ts` - Semantic search API (Loop 5)
+- `app/api/kb/answer/route.ts` - AI answer generation with citations (Loop 5.5)
 - `app/api/kb/folders/route.ts` - List/add folders (Loop 5)
 - `app/api/kb/folders/[id]/route.ts` - Get/update/delete folder (Loop 5)
+- `app/api/kb/websites/route.ts` - Website CRUD (Loop 5.5)
+- `app/api/kb/websites/[id]/route.ts` - Website management (Loop 5.5)
+- `app/api/kb/documents/[id]/priority/route.ts` - Document priority updates (Loop 5.5)
 - `app/api/tasks/[id]/context/route.ts` - Task-document context (Loop 5)
 
 ### Pages
@@ -226,10 +271,13 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `components/calendar/WeekGrid.tsx` - Week grid view (Loop 4)
 - `components/calendar/PrepPacket.tsx` - AI prep packet display (Loop 4)
 - `components/kb/FolderList.tsx` - Synced folders list (Loop 5)
-- `components/kb/DocumentList.tsx` - Documents in folder (Loop 5)
-- `components/kb/SearchBar.tsx` - Semantic search input (Loop 5)
-- `components/kb/SearchResults.tsx` - Search results with citations (Loop 5)
+- `components/kb/DocumentList.tsx` - Documents in folder with priority controls (Loop 5/5.5)
+- `components/kb/SearchBar.tsx` - Search with mode toggle (Get Answer/Search) (Loop 5/5.5)
+- `components/kb/SearchResults.tsx` - Search results with summaries (Loop 5/5.5)
+- `components/kb/AnswerPanel.tsx` - AI answer display with citations (Loop 5.5)
 - `components/kb/AddFolderModal.tsx` - Add Drive folder modal (Loop 5)
+- `components/kb/WebsiteList.tsx` - Website management list (Loop 5.5)
+- `components/kb/AddWebsiteModal.tsx` - Add website modal (Loop 5.5)
 - `components/kb/TaskContextPanel.tsx` - Related documents for tasks (Loop 5)
 - `hooks/usePushNotifications.ts` - Push subscription management hook
 
@@ -246,8 +294,10 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `lib/kb/extractors/pdf.ts` - PDF extractor (Loop 5)
 - `lib/kb/extractors/text.ts` - Plain text extractor (Loop 5)
 - `lib/kb/extractors/sheets.ts` - Google Sheets extractor (Loop 5)
+- `lib/kb/extractors/html.ts` - HTML extractor for websites (Loop 5.5)
 - `lib/kb/chunker.ts` - Text chunking logic (Loop 5)
 - `lib/kb/embeddings.ts` - OpenAI embedding generation (Loop 5)
+- `lib/kb/crawler.ts` - Website crawler with robots.txt support (Loop 5.5)
 - `lib/gmail/client.ts` - Gmail fetch (including fetchMessagesInThreads for sent emails)
 - `lib/gmail/send.ts` - Gmail send
 - `lib/google/auth.ts` - Shared Google OAuth client (Loop 4/5)
@@ -257,6 +307,8 @@ Outcome: sustainable long-term storage with no data loss surprises.
 - `lib/ai/follow-up-prompt.ts` - AI prompt for follow-ups
 - `lib/ai/meeting-prep-prompt.ts` - AI prompt for meeting prep packets (Loop 4)
 - `lib/ai/scheduling-suggestions.ts` - AI scheduling suggestions logic (Loop 4)
+- `lib/ai/answer-generation-prompt.ts` - AI prompt for grounded answers (Loop 5.5)
+- `lib/ai/summary-generation-prompt.ts` - AI prompt for document summaries (Loop 5.5)
 - `lib/notifications/push.ts` - Web Push notification sender
 - `lib/notifications/brief-generator.ts` - AI-powered brief content generation (+ calendar insights)
 
@@ -308,14 +360,16 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 
 ## CURRENT STATUS
 
-**Last Updated**: January 17, 2025
+**Last Updated**: January 18, 2025
 
 - Loop 1: COMPLETE - Email → Tasks working
 - Loop 2: COMPLETE - Waiting-on detection with sent emails working
 - Loop 3: COMPLETE - Daily briefs + push notifications
 - Loop 4: COMPLETE - AI-Powered Productivity Calendar
 - Loop 5: COMPLETE - Knowledge Base + RAG System
+- Loop 5.5: COMPLETE - RAG Improvements (Answer Generation, Summaries, Website Crawler, Priority UI)
 - Migration 007: NEEDS TO BE APPLIED to Supabase (requires pgvector extension)
+- Migration 009: NEEDS TO BE APPLIED for Loop 5.5 features (priority, summaries, websites)
 - Deployment: LIVE at https://personal-assistant-ai-lime.vercel.app
 - Cron Jobs (cron-job.org):
   - process-emails: every 1 min
@@ -325,6 +379,7 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
   - sync-calendar: every 15 min
   - sync-drive: every 30 min (NEEDS SETUP)
   - process-kb: every 10 min (NEEDS SETUP)
+  - crawl-websites: every 6 hours (NEEDS SETUP)
 
 ## CRON JOB SETUP
 
@@ -338,16 +393,26 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 | Sync Calendar | `https://personal-assistant-ai-lime.vercel.app/api/cron/sync-calendar` | Every 15 min | - |
 | Sync Drive | `https://personal-assistant-ai-lime.vercel.app/api/cron/sync-drive` | Every 30 min | - |
 | Process KB | `https://personal-assistant-ai-lime.vercel.app/api/cron/process-kb` | Every 10 min | - |
+| Crawl Websites | `https://personal-assistant-ai-lime.vercel.app/api/cron/crawl-websites` | Every 6 hours | - |
 
 All cron jobs require `Authorization: Bearer {CRON_SECRET}` header.
 
 ## NEXT STEPS
 
+### Loop 5.5 Deployment (RAG Improvements)
+1. Apply migration 009 to Supabase for Loop 5.5 features (priority, summaries, kb_websites table)
+2. Set up crawl-websites cron job on cron-job.org (every 6 hours)
+3. Run backfill script for existing documents: `npx tsx scripts/backfill-summaries.ts`
+4. Test answer generation at /knowledge-base (toggle to "Get Answer" mode)
+5. Test website crawling by adding a website via the Websites tab
+6. Deploy to Vercel
+
+### If migration 007 not yet applied:
 1. Apply migration 007 to Supabase for Knowledge Base tables (requires pgvector extension)
 2. Re-authorize Google OAuth with drive.readonly scope (new refresh token needed)
-3. Run `npm install` to install pdf-parse dependency
-4. Set up sync-drive cron job on cron-job.org (every 30 min)
-5. Set up process-kb cron job on cron-job.org (every 10 min)
-6. Add first Google Drive folder via /knowledge-base page
-7. Test document sync, extraction, and semantic search
-8. Move to Loop 6 (Entity System)
+3. Set up sync-drive cron job on cron-job.org (every 30 min)
+4. Set up process-kb cron job on cron-job.org (every 10 min)
+5. Add first Google Drive folder via /knowledge-base page
+
+### Future
+- Move to Loop 6 (Entity System)

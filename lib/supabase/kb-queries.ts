@@ -32,8 +32,8 @@ export interface KBFolder {
 
 export interface KBDocument {
   id: string;
-  folder_id: string;
-  drive_file_id: string;
+  folder_id: string | null;
+  drive_file_id: string | null;
   file_name: string;
   file_path: string | null;
   mime_type: string;
@@ -48,6 +48,13 @@ export interface KBDocument {
   indexed_at: string | null;
   created_at: string;
   updated_at: string;
+  // New fields for Loop 5.5
+  processing_priority: number;
+  summary: string | null;
+  summary_generated_at: string | null;
+  website_id: string | null;
+  source_url: string | null;
+  is_virtual: boolean;
 }
 
 export interface KBChunk {
@@ -79,6 +86,31 @@ export interface SearchResult {
   file_name: string;
   file_path: string | null;
   drive_file_id: string;
+  summary: string | null;
+}
+
+// Website types
+export type WebsiteStatus = 'pending' | 'crawling' | 'indexed' | 'failed';
+
+export interface KBWebsite {
+  id: string;
+  url: string;
+  name: string;
+  max_depth: number;
+  max_pages: number;
+  status: WebsiteStatus;
+  last_crawl_at: string | null;
+  page_count: number;
+  crawl_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KBWebsiteWithStats extends KBWebsite {
+  indexed_count: number;
+  pending_count: number;
+  processing_count: number;
+  failed_count: number;
 }
 
 // ============================================
@@ -676,4 +708,513 @@ export async function unlinkDocumentFromTask(
   if (error) {
     throw new Error(`Failed to unlink document from task: ${error.message}`);
   }
+}
+
+// ============================================
+// CATEGORY QUERIES
+// ============================================
+
+export interface KBCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KBDocumentCategory {
+  id: string;
+  document_id: string;
+  category_id: string;
+  created_at: string;
+}
+
+/**
+ * Get all categories
+ */
+export async function getAllCategories(): Promise<KBCategory[]> {
+  const { data, error } = await (supabase as any)
+    .from('kb_categories')
+    .select('*')
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch categories: ${error.message}`);
+  }
+
+  return data as KBCategory[];
+}
+
+/**
+ * Get a category by ID
+ */
+export async function getCategoryById(categoryId: string): Promise<KBCategory | null> {
+  const { data, error } = await (supabase as any)
+    .from('kb_categories')
+    .select('*')
+    .eq('id', categoryId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Failed to fetch category: ${error.message}`);
+  }
+
+  return data as KBCategory;
+}
+
+/**
+ * Create a new category
+ */
+export async function createCategory(params: {
+  name: string;
+  description?: string;
+  color?: string;
+}): Promise<KBCategory> {
+  const { data, error } = await (supabase as any)
+    .from('kb_categories')
+    .insert({
+      name: params.name,
+      description: params.description || null,
+      color: params.color || '#6B7280',
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create category: ${error.message}`);
+  }
+
+  return data as KBCategory;
+}
+
+/**
+ * Update a category
+ */
+export async function updateCategory(
+  categoryId: string,
+  updates: Partial<Pick<KBCategory, 'name' | 'description' | 'color'>>
+): Promise<KBCategory> {
+  const { data, error } = await (supabase as any)
+    .from('kb_categories')
+    .update(updates)
+    .eq('id', categoryId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update category: ${error.message}`);
+  }
+
+  return data as KBCategory;
+}
+
+/**
+ * Delete a category
+ */
+export async function deleteCategory(categoryId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('kb_categories')
+    .delete()
+    .eq('id', categoryId);
+
+  if (error) {
+    throw new Error(`Failed to delete category: ${error.message}`);
+  }
+}
+
+/**
+ * Get categories for a document
+ */
+export async function getDocumentCategories(documentId: string): Promise<KBCategory[]> {
+  const { data, error } = await (supabase as any)
+    .from('kb_document_categories')
+    .select(`
+      category:kb_categories(*)
+    `)
+    .eq('document_id', documentId);
+
+  if (error) {
+    throw new Error(`Failed to fetch document categories: ${error.message}`);
+  }
+
+  return data.map((row: any) => row.category as KBCategory);
+}
+
+/**
+ * Assign a category to a document
+ */
+export async function assignCategoryToDocument(
+  documentId: string,
+  categoryId: string
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('kb_document_categories')
+    .upsert(
+      {
+        document_id: documentId,
+        category_id: categoryId,
+      },
+      { onConflict: 'document_id,category_id' }
+    );
+
+  if (error) {
+    throw new Error(`Failed to assign category to document: ${error.message}`);
+  }
+}
+
+/**
+ * Remove a category from a document
+ */
+export async function removeCategoryFromDocument(
+  documentId: string,
+  categoryId: string
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('kb_document_categories')
+    .delete()
+    .eq('document_id', documentId)
+    .eq('category_id', categoryId);
+
+  if (error) {
+    throw new Error(`Failed to remove category from document: ${error.message}`);
+  }
+}
+
+/**
+ * Delete a document and all its chunks
+ */
+export async function deleteDocument(documentId: string): Promise<void> {
+  // Chunks are deleted via CASCADE, categories via CASCADE
+  const { error } = await (supabase as any)
+    .from('kb_documents')
+    .delete()
+    .eq('id', documentId);
+
+  if (error) {
+    throw new Error(`Failed to delete document: ${error.message}`);
+  }
+}
+
+/**
+ * Get documents with their categories (for display)
+ */
+export async function getDocumentsWithCategories(
+  folderId?: string,
+  status?: DocumentStatus
+): Promise<Array<KBDocument & { categories: KBCategory[] }>> {
+  let query = (supabase as any)
+    .from('kb_documents')
+    .select(`
+      *,
+      categories:kb_document_categories(
+        category:kb_categories(*)
+      )
+    `)
+    .order('file_name', { ascending: true });
+
+  if (folderId) {
+    query = query.eq('folder_id', folderId);
+  }
+
+  if (status) {
+    query = query.eq('status', status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch documents with categories: ${error.message}`);
+  }
+
+  // Flatten the categories structure
+  return data.map((doc: any) => ({
+    ...doc,
+    categories: doc.categories?.map((c: any) => c.category).filter(Boolean) || [],
+  }));
+}
+
+// ============================================
+// DOCUMENT PRIORITY QUERIES (Loop 5.5)
+// ============================================
+
+/**
+ * Update document processing priority
+ * Higher values = processed first
+ */
+export async function updateDocumentPriority(
+  documentId: string,
+  priority: number
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('kb_documents')
+    .update({ processing_priority: priority })
+    .eq('id', documentId);
+
+  if (error) {
+    throw new Error(`Failed to update document priority: ${error.message}`);
+  }
+}
+
+// ============================================
+// DOCUMENT SUMMARY QUERIES (Loop 5.5)
+// ============================================
+
+/**
+ * Update document with AI-generated summary
+ */
+export async function updateDocumentSummary(
+  documentId: string,
+  summary: string
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('kb_documents')
+    .update({
+      summary,
+      summary_generated_at: new Date().toISOString(),
+    })
+    .eq('id', documentId);
+
+  if (error) {
+    throw new Error(`Failed to update document summary: ${error.message}`);
+  }
+}
+
+// ============================================
+// WEBSITE QUERIES (Loop 5.5)
+// ============================================
+
+/**
+ * Get all websites with their status counts
+ */
+export async function getAllWebsites(): Promise<KBWebsiteWithStats[]> {
+  const { data, error } = await (supabase as any)
+    .from('kb_website_status')
+    .select('*')
+    .order('name', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching websites:', error);
+    throw new Error(`Failed to fetch websites: ${error.message}`);
+  }
+
+  return data as KBWebsiteWithStats[];
+}
+
+/**
+ * Get a website by ID
+ */
+export async function getWebsiteById(websiteId: string): Promise<KBWebsite | null> {
+  const { data, error } = await (supabase as any)
+    .from('kb_websites')
+    .select('*')
+    .eq('id', websiteId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Failed to fetch website: ${error.message}`);
+  }
+
+  return data as KBWebsite;
+}
+
+/**
+ * Create a new website to crawl
+ */
+export async function createWebsite(params: {
+  url: string;
+  name: string;
+  max_depth?: number;
+  max_pages?: number;
+}): Promise<KBWebsite> {
+  const { data, error } = await (supabase as any)
+    .from('kb_websites')
+    .insert({
+      url: params.url,
+      name: params.name,
+      max_depth: params.max_depth ?? 2,
+      max_pages: params.max_pages ?? 50,
+      status: 'pending',
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create website: ${error.message}`);
+  }
+
+  return data as KBWebsite;
+}
+
+/**
+ * Update website settings
+ */
+export async function updateWebsite(
+  websiteId: string,
+  updates: Partial<Pick<KBWebsite, 'name' | 'max_depth' | 'max_pages' | 'status' | 'crawl_error'>>
+): Promise<KBWebsite> {
+  const { data, error } = await (supabase as any)
+    .from('kb_websites')
+    .update(updates)
+    .eq('id', websiteId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update website: ${error.message}`);
+  }
+
+  return data as KBWebsite;
+}
+
+/**
+ * Update website crawl status
+ */
+export async function updateWebsiteCrawlStatus(
+  websiteId: string,
+  params: {
+    status: WebsiteStatus;
+    last_crawl_at?: string;
+    page_count?: number;
+    crawl_error?: string | null;
+  }
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('kb_websites')
+    .update(params)
+    .eq('id', websiteId);
+
+  if (error) {
+    throw new Error(`Failed to update website crawl status: ${error.message}`);
+  }
+}
+
+/**
+ * Delete a website and all its documents
+ */
+export async function deleteWebsite(websiteId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('kb_websites')
+    .delete()
+    .eq('id', websiteId);
+
+  if (error) {
+    throw new Error(`Failed to delete website: ${error.message}`);
+  }
+}
+
+/**
+ * Get websites pending crawl
+ */
+export async function getWebsitesToCrawl(): Promise<KBWebsite[]> {
+  const { data, error } = await (supabase as any)
+    .from('kb_websites')
+    .select('*')
+    .in('status', ['pending', 'indexed']) // Pending or ready for re-crawl
+    .order('last_crawl_at', { ascending: true, nullsFirst: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch websites to crawl: ${error.message}`);
+  }
+
+  return data as KBWebsite[];
+}
+
+/**
+ * Create a virtual document (from website crawl)
+ */
+export async function createVirtualDocument(params: {
+  website_id: string;
+  source_url: string;
+  file_name: string;
+  mime_type: string;
+}): Promise<KBDocument> {
+  const { data, error } = await (supabase as any)
+    .from('kb_documents')
+    .insert({
+      website_id: params.website_id,
+      source_url: params.source_url,
+      file_name: params.file_name,
+      mime_type: params.mime_type,
+      is_virtual: true,
+      status: 'pending',
+      folder_id: null,
+      drive_file_id: null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create virtual document: ${error.message}`);
+  }
+
+  return data as KBDocument;
+}
+
+/**
+ * Get or create a virtual document by source URL (upsert behavior)
+ */
+export async function upsertVirtualDocument(params: {
+  website_id: string;
+  source_url: string;
+  file_name: string;
+  mime_type: string;
+}): Promise<KBDocument> {
+  // First, try to find existing document
+  const { data: existing } = await (supabase as any)
+    .from('kb_documents')
+    .select('*')
+    .eq('source_url', params.source_url)
+    .eq('website_id', params.website_id)
+    .single();
+
+  if (existing) {
+    // Update to pending for re-processing
+    const { data, error } = await (supabase as any)
+      .from('kb_documents')
+      .update({
+        file_name: params.file_name,
+        status: 'pending',
+      })
+      .eq('id', existing.id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update virtual document: ${error.message}`);
+    }
+
+    return data as KBDocument;
+  }
+
+  // Create new document
+  return createVirtualDocument(params);
+}
+
+/**
+ * Get documents for a website
+ */
+export async function getDocumentsForWebsite(
+  websiteId: string,
+  status?: DocumentStatus
+): Promise<KBDocument[]> {
+  let query = (supabase as any)
+    .from('kb_documents')
+    .select('*')
+    .eq('website_id', websiteId)
+    .order('file_name', { ascending: true });
+
+  if (status) {
+    query = query.eq('status', status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch website documents: ${error.message}`);
+  }
+
+  return data as KBDocument[];
 }
