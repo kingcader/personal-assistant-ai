@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getTasksByOwner } from '@/lib/supabase/task-queries';
+import CreateTaskModal from '@/components/calendar/CreateTaskModal';
 
 type Task = {
   id: string;
@@ -45,6 +46,7 @@ export default function TasksPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [editingTask, setEditingTask] = useState<EditingTask | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     loadTasks();
@@ -265,11 +267,22 @@ export default function TasksPage() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-gray-900">Tasks</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {totalTasks} {totalTasks === 1 ? 'task' : 'tasks'}
-          </p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Tasks</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              {totalTasks} {totalTasks === 1 ? 'task' : 'tasks'}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Task
+          </button>
         </div>
 
         {/* Filter */}
@@ -579,6 +592,16 @@ export default function TasksPage() {
           </div>
         </div>
       )}
+
+      {/* Create Task Modal */}
+      <CreateTaskModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={() => {
+          loadTasks();
+          showToast('Task created', 'success');
+        }}
+      />
     </div>
   );
 }
