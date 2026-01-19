@@ -108,12 +108,12 @@ function cleanPdfText(text: string): string {
  * Extract PDF with AI vision fallback
  *
  * First tries regular text extraction. If the PDF has no extractable text
- * (image-based PDF like architectural renderings), creates a minimal
- * searchable entry based on the filename.
+ * (image-based PDF like architectural renderings), uses AI vision to
+ * analyze the visual content.
  *
  * @param fileId - Google Drive file ID
  * @param fileName - File name for AI context
- * @returns Extracted text or minimal description for image-based PDFs
+ * @returns Extracted text or AI vision description for image-based PDFs
  */
 export async function extractPdfWithVisionFallback(
   fileId: string,
@@ -129,10 +129,40 @@ export async function extractPdfWithVisionFallback(
 
   // PDF has no extractable text - this is likely an image-based PDF
   // (architectural renderings, scanned documents, etc.)
-  console.log(`📄 PDF "${fileName}" has no extractable text (likely image-based)`);
+  console.log(`📄 PDF "${fileName}" has no extractable text, using AI vision...`);
 
-  // Create a minimal searchable entry based on filename
-  // This allows the document to be found by name in search
+  try {
+    // Download the PDF and analyze with AI vision
+    const buffer = await downloadFile(fileId);
+
+    // Check file size (20MB limit for vision API)
+    const maxSizeBytes = 20 * 1024 * 1024;
+    if (buffer.length > maxSizeBytes) {
+      console.log(`⚠️ PDF too large for vision (${Math.round(buffer.length / 1024 / 1024)}MB)`);
+      return createFallbackDescription(fileName);
+    }
+
+    const visionText = await analyzePdfWithVision(buffer, fileName);
+
+    return {
+      success: true,
+      text: visionText,
+      metadata: {
+        wordCount: visionText.split(/\s+/).length,
+        hasStructure: false,
+      },
+    };
+  } catch (error) {
+    console.error(`❌ AI vision failed for PDF "${fileName}":`, error);
+    // Fall back to minimal description
+    return createFallbackDescription(fileName);
+  }
+}
+
+/**
+ * Create a fallback description when vision analysis fails or isn't available
+ */
+function createFallbackDescription(fileName: string): ExtractionResult {
   const baseName = fileName.replace(/\.pdf$/i, '');
   const description = `[Image-Based PDF Document]
 
