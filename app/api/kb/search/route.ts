@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Validate input
-    const { query, limit = 10, truthPriorityFilter, threshold = 0.5 } = body;
+    const { query, limit = 10, truthPriorityFilter, threshold = 0.3 } = body;
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
