@@ -75,16 +75,72 @@ export interface KBContext {
 }
 
 // ============================================
+// DATE REFERENCE PARSING
+// ============================================
+
+/**
+ * Parse natural language date references for agenda queries
+ * Returns the target date based on time reference strings like "tomorrow", "next week", etc.
+ */
+export function parseDateReference(timeRef: string): Date {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const lower = timeRef.toLowerCase();
+
+  // Tomorrow
+  if (lower.includes('tomorrow')) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + 1);
+    return d;
+  }
+
+  // Next week
+  if (lower.includes('next week')) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + 7);
+    return d;
+  }
+
+  // "In X days"
+  const inDaysMatch = lower.match(/in\s+(\d+)\s*days?/);
+  if (inDaysMatch) {
+    const days = parseInt(inDaysMatch[1], 10);
+    const d = new Date(today);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  // Day of week names (e.g., "monday", "tuesday")
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  for (let i = 0; i < days.length; i++) {
+    if (lower.includes(days[i])) {
+      const d = new Date(today);
+      const currentDay = d.getDay();
+      let daysUntil = i - currentDay;
+      if (daysUntil <= 0) daysUntil += 7; // Move to next week if day has passed
+      d.setDate(d.getDate() + daysUntil);
+      return d;
+    }
+  }
+
+  // Default to today
+  return today;
+}
+
+// ============================================
 // AGENDA CONTEXT
 // ============================================
 
 /**
- * Fetch complete agenda context for the current user
+ * Fetch complete agenda context for a specific date
  * Used for "what's on my plate" type queries
+ * @param targetDate - The date to fetch agenda for (defaults to today)
  */
-export async function fetchAgendaContext(): Promise<AgendaContext> {
+export async function fetchAgendaContext(targetDate?: Date): Promise<AgendaContext> {
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = targetDate
+    ? new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate())
+    : new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const endOfToday = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
 
   // Fetch all data in parallel
@@ -103,8 +159,8 @@ export async function fetchAgendaContext(): Promise<AgendaContext> {
       .not('status', 'in', '("completed","cancelled")')
       .order('due_date', { ascending: true, nullsFirst: false }),
 
-    // Today's events
-    getTodaysEvents(),
+    // Events for target date
+    getCalendarEvents(today, endOfToday),
 
     // Waiting-on threads
     getWaitingOnThreads(),
@@ -352,11 +408,32 @@ export async function findThread(searchTerm: string): Promise<{
 
 /**
  * Format agenda context as a string for AI prompt
+ * @param agenda - The agenda context data
+ * @param targetDate - Optional date for the header (defaults to today)
  */
-export function formatAgendaForPrompt(agenda: AgendaContext): string {
+export function formatAgendaForPrompt(agenda: AgendaContext, targetDate?: Date): string {
   const lines: string[] = [];
 
-  lines.push('## TODAY\'S AGENDA\n');
+  // Format the date for the header
+  const dateToShow = targetDate || new Date();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const isToday = dateToShow.toDateString() === today.toDateString();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const isTomorrow = dateToShow.toDateString() === tomorrow.toDateString();
+
+  let dateLabel: string;
+  if (isToday) {
+    dateLabel = "TODAY'S AGENDA";
+  } else if (isTomorrow) {
+    dateLabel = "TOMORROW'S AGENDA";
+  } else {
+    dateLabel = `AGENDA FOR ${dateToShow.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}`;
+  }
+
+  lines.push(`## ${dateLabel}\n`);
 
   // Events
   lines.push('### Calendar Events');

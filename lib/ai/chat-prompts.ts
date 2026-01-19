@@ -19,7 +19,7 @@ export const INTENT_CLASSIFIER_PROMPT = `You are an intent classifier for a pers
    - Examples: "What did the contract say about X?", "What's our policy on Y?", "What was the pricing we agreed on?"
 
 2. **agenda_query** - Questions about what needs to be done, schedule, or priorities
-   - Examples: "What's on my plate today?", "What do I need to focus on?", "What meetings do I have?", "What are my priorities?"
+   - Examples: "What's on my plate today?", "What do I need to focus on?", "What meetings do I have?", "What are my priorities?", "What about tomorrow?"
 
 3. **draft_generation** - Requests to write or draft communications
    - Examples: "Write a follow-up to John", "Draft an email about the project", "Compose a message to Sarah"
@@ -36,14 +36,30 @@ export const INTENT_CLASSIFIER_PROMPT = `You are an intent classifier for a pers
 7. **email_search** - Requests to find or search for emails
    - Examples: "Find emails from Sarah", "Search for emails about the contract", "Show me emails from last week about the project"
 
-8. **general** - General conversation, greetings, or questions that don't fit other categories
+8. **summarization** - Requests for summaries, digests, or overviews of the day/week/tasks
+   - Examples: "Summarize my day", "Give me a recap", "What's the overview?", "Brief me on today"
+
+9. **general** - General conversation, greetings, or questions that don't fit other categories
    - Examples: "Hello", "How are you?", "What can you help me with?"
+
+## CONVERSATION CONTEXT
+
+When conversation history is provided, use it to understand follow-up messages. Consider:
+- **Pronouns**: "it", "them", "that", "those" likely refer to previous topics
+- **Time shifts**: "what about tomorrow?", "and next week?" continue the previous query type with new time
+- **Topic continuation**: "tell me more", "elaborate", "what else?" continue the same intent
+- **Person references**: "what did she say?", "his emails" refer to previously mentioned people
+
+Examples with context:
+- Previous: agenda_query → "what about tomorrow?" → agenda_query with time_reference: "tomorrow"
+- Previous: email_search for Sarah → "what did she say about the contract?" → email_search (same person, new topic)
+- Previous: agenda_query → "summarize that" → summarization
 
 ## RESPONSE FORMAT
 
 Return a JSON object with this exact structure:
 {
-  "intent": "knowledge_question" | "agenda_query" | "draft_generation" | "info_query" | "task_creation" | "event_creation" | "email_search" | "general",
+  "intent": "knowledge_question" | "agenda_query" | "draft_generation" | "info_query" | "task_creation" | "event_creation" | "email_search" | "summarization" | "general",
   "confidence": "high" | "medium" | "low",
   "entities": {
     "person_names": ["name1", "name2"],
@@ -180,7 +196,7 @@ Return a JSON object with this structure:
  * Parse intent classification response
  */
 export interface IntentClassification {
-  intent: 'knowledge_question' | 'agenda_query' | 'draft_generation' | 'info_query' | 'task_creation' | 'event_creation' | 'email_search' | 'general';
+  intent: 'knowledge_question' | 'agenda_query' | 'draft_generation' | 'info_query' | 'task_creation' | 'event_creation' | 'email_search' | 'summarization' | 'general';
   confidence: 'high' | 'medium' | 'low';
   entities: {
     person_names: string[];
@@ -200,6 +216,7 @@ const VALID_INTENTS = [
   'task_creation',
   'event_creation',
   'email_search',
+  'summarization',
   'general',
 ];
 

@@ -38,6 +38,7 @@ import {
   findTask,
   searchEmailsContext,
   formatEmailSearchForPrompt,
+  parseDateReference,
 } from '@/lib/chat/context';
 import { logAuditEvent } from '@/lib/supabase/audit-queries';
 import { getDriveFileUrl } from '@/lib/google/drive';
@@ -45,6 +46,7 @@ import {
   createConversation,
   addMessage,
   getConversation,
+  getMessages,
 } from '@/lib/supabase/conversation-queries';
 import {
   getTaskExtractionSystemPrompt,
@@ -83,7 +85,7 @@ interface ChatAction {
 interface ChatResponse {
   success: boolean;
   response: string;
-  type: 'answer' | 'draft' | 'agenda' | 'info' | 'general' | 'search_results';
+  type: 'answer' | 'draft' | 'agenda' | 'info' | 'general' | 'search_results' | 'summary';
   citations?: Citation[];
   confidence?: 'high' | 'medium' | 'low';
   action?: ChatAction;
@@ -173,12 +175,27 @@ async function callAI(
 
 /**
  * Classify the intent of a user message
+ * @param message - The current user message
+ * @param conversationHistory - Optional recent conversation history for context
  */
-async function classifyIntent(message: string): Promise<IntentClassification> {
-  const response = await callAI(
-    INTENT_CLASSIFIER_PROMPT,
-    `Classify this message:\n\n"${message}"`
-  );
+async function classifyIntent(
+  message: string,
+  conversationHistory?: Array<{ role: string; content: string }>
+): Promise<IntentClassification> {
+  // Build prompt with optional conversation context
+  let userPrompt = '';
+
+  if (conversationHistory && conversationHistory.length > 0) {
+    userPrompt += '## Recent Conversation:\n';
+    conversationHistory.forEach(m => {
+      userPrompt += `${m.role}: ${m.content}\n`;
+    });
+    userPrompt += '\n';
+  }
+
+  userPrompt += `## Message to Classify:\n"${message}"`;
+
+  const response = await callAI(INTENT_CLASSIFIER_PROMPT, userPrompt);
   return parseIntentResponse(response);
 }
 
@@ -265,7 +282,7 @@ async function handleKnowledgeQuestion(
 }
 
 /**
- * Handle agenda query - synthesize today's overview
+ * Handle agenda query - synthesize overview for requested date
  */
 async function handleAgendaQuery(
   message: string,
@@ -273,11 +290,17 @@ async function handleAgendaQuery(
 ): Promise<ChatResponse> {
   console.log('📅 Handling agenda query:', message);
 
-  // Fetch all agenda context
-  const agendaContext = await fetchAgendaContext();
+  // Parse date reference from intent or message
+  let targetDate: Date | undefined;
+  if (intent.entities.time_reference) {
+    targetDate = parseDateReference(intent.entities.time_reference);
+  }
 
-  // Format for AI prompt
-  const contextString = formatAgendaForPrompt(agendaContext);
+  // Fetch agenda context for target date
+  const agendaContext = await fetchAgendaContext(targetDate);
+
+  // Format for AI prompt with target date
+  const contextString = formatAgendaForPrompt(agendaContext, targetDate);
 
   // Generate synthesis
   const aiResponse = await callAI(
@@ -725,6 +748,62 @@ async function handleEmailSearch(
   };
 }
 
+/**
+ * Handle summarization requests - provide concise overview/digest
+ */
+async function handleSummarization(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('📋 Handling summarization:', message);
+
+  // Parse date reference if provided
+  let targetDate: Date | undefined;
+  if (intent.entities.time_reference) {
+    targetDate = parseDateReference(intent.entities.time_reference);
+  }
+
+  // Fetch agenda context
+  const agendaContext = await fetchAgendaContext(targetDate);
+
+  // Format context for AI
+  const contextString = formatAgendaForPrompt(agendaContext, targetDate);
+
+  // Create summarization-specific prompt
+  const summarySystemPrompt = `You are a personal assistant providing a concise summary. Your task is to synthesize the provided agenda data into a brief, actionable digest.
+
+## RESPONSE GUIDELINES
+
+- Be CONCISE - aim for 3-5 bullet points maximum
+- Highlight what matters most: urgent items, upcoming meetings, high-priority tasks
+- Use natural language, not lists of data
+- Focus on actionable insights, not just reporting numbers
+- If there's nothing urgent or noteworthy, say so clearly
+- Include time context (today, tomorrow, this week) in your summary
+
+## OUTPUT FORMAT
+
+Provide a brief narrative summary followed by key action items if any. Do NOT use JSON format - respond in natural language.`;
+
+  const aiResponse = await callAI(
+    summarySystemPrompt,
+    `User requested: "${message}"\n\n${contextString}`
+  );
+
+  // Build response
+  const dateLabel = targetDate
+    ? targetDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    : 'Today';
+
+  return {
+    success: true,
+    response: `## ${dateLabel}'s Summary\n\n${aiResponse}`,
+    type: 'agenda' as const,
+    confidence: 'high',
+    intent,
+  };
+}
+
 // ============================================
 // MAIN HANDLER
 // ============================================
@@ -774,7 +853,22 @@ export async function POST(request: NextRequest) {
       console.log(`📝 Created new conversation: ${activeConversationId}`);
     }
 
-    // Step 2: Save user message
+    // Step 2: Fetch recent conversation history for context (before adding new message)
+    let conversationHistory: Array<{ role: string; content: string }> = [];
+    try {
+      const recentMessages = await getMessages(activeConversationId);
+      // Get last 4 messages for context (2 exchanges)
+      conversationHistory = recentMessages
+        .slice(-4)
+        .map(m => ({
+          role: m.role,
+          content: m.content,
+        }));
+    } catch (e) {
+      console.log('⚠️ Could not fetch conversation history:', e);
+    }
+
+    // Step 3: Save user message
     const userMessage = await addMessage({
       conversation_id: activeConversationId,
       role: 'user',
@@ -782,11 +876,11 @@ export async function POST(request: NextRequest) {
     });
     console.log(`💾 Saved user message: ${userMessage.id}`);
 
-    // Step 3: Classify intent
-    const intent = await classifyIntent(message);
+    // Step 4: Classify intent with conversation context
+    const intent = await classifyIntent(message, conversationHistory);
     console.log(`🎯 Intent: ${intent.intent} (${intent.confidence})`);
 
-    // Step 4: Route to appropriate handler
+    // Step 5: Route to appropriate handler
     let response: ChatResponse;
 
     switch (intent.intent) {
@@ -810,6 +904,9 @@ export async function POST(request: NextRequest) {
         break;
       case 'email_search':
         response = await handleEmailSearch(message, intent);
+        break;
+      case 'summarization':
+        response = await handleSummarization(message, intent);
         break;
       case 'general':
       default:

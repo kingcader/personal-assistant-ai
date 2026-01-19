@@ -96,12 +96,37 @@ export async function searchEmails(params: EmailSearchParams): Promise<EmailSear
       }
     }
 
-    // Apply sender name filter
+    // Apply sender name filter with fallback matching
     if (params.senderName) {
-      const { data: senders } = await supabase
+      // First try: exact substring match
+      let { data: senders } = await supabase
         .from('people')
         .select('id')
         .ilike('name', `%${params.senderName}%`);
+
+      // Fallback 1: prefix match (e.g., "Jens" matches "Jen Smith")
+      if (!senders || senders.length === 0) {
+        let searchName = params.senderName;
+        // Remove trailing 's' that often causes mismatches (Jens vs Jen)
+        if (searchName.endsWith('s') && searchName.length > 3) {
+          searchName = searchName.slice(0, -1);
+        }
+        const { data: prefixSenders } = await supabase
+          .from('people')
+          .select('id')
+          .ilike('name', `${searchName}%`);
+        senders = prefixSenders;
+      }
+
+      // Fallback 2: Try first 3+ characters as prefix for shorter names
+      if ((!senders || senders.length === 0) && params.senderName.length >= 3) {
+        const shortPrefix = params.senderName.substring(0, Math.max(3, params.senderName.length - 1));
+        const { data: shortPrefixSenders } = await supabase
+          .from('people')
+          .select('id')
+          .ilike('name', `${shortPrefix}%`);
+        senders = shortPrefixSenders;
+      }
 
       if (senders && senders.length > 0) {
         const senderIds = senders.map((s: { id: string }) => s.id);
