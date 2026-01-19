@@ -16,10 +16,12 @@ import {
   AGENDA_SYNTHESIS_PROMPT,
   DRAFT_GENERATION_PROMPT,
   INFO_QUERY_PROMPT,
+  ENTITY_QUERY_PROMPT,
   parseIntentResponse,
   parseAgendaResponse,
   parseDraftResponse,
   parseInfoResponse,
+  parseEntityQueryResponse,
   IntentClassification,
 } from '@/lib/ai/chat-prompts';
 import {
@@ -31,15 +33,30 @@ import {
   fetchAgendaContext,
   fetchPersonContext,
   fetchKBContext,
+  fetchEntityContext,
+  fetchMultiEntityContext,
   formatAgendaForPrompt,
   formatPersonForPrompt,
   formatKBForPrompt,
+  formatEntityForPrompt,
+  formatMultiEntityForPrompt,
   findMeeting,
   findTask,
   searchEmailsContext,
   formatEmailSearchForPrompt,
   parseDateReference,
 } from '@/lib/chat/context';
+import {
+  extractEntityNamesFromMessage,
+  ENTITY_EXTRACTION_SYSTEM_PROMPT,
+  parseExtractionResponse,
+} from '@/lib/entities/extractor';
+import {
+  upsertEntity,
+  upsertRelationship,
+  findEntityByName,
+} from '@/lib/entities/queries';
+import type { Entity } from '@/lib/entities/queries';
 import { logAuditEvent } from '@/lib/supabase/audit-queries';
 import { getDriveFileUrl } from '@/lib/google/drive';
 import {
@@ -409,6 +426,7 @@ async function handleDraftGeneration(
 
 /**
  * Handle info query - specific lookups
+ * Enhanced with entity context for person/org queries
  */
 async function handleInfoQuery(
   message: string,
@@ -419,9 +437,17 @@ async function handleInfoQuery(
   let contextString = '';
 
   // Try to find relevant data based on the query
+  // First try entity lookup (richer than person lookup)
   if (intent.entities.person_names.length > 0) {
-    const personContext = await fetchPersonContext(intent.entities.person_names[0]);
-    contextString = formatPersonForPrompt(personContext);
+    const entityContext = await fetchEntityContext(intent.entities.person_names[0]);
+    if (entityContext) {
+      // Use entity context (has relationships, mentions, etc.)
+      contextString = formatEntityForPrompt(entityContext);
+    } else {
+      // Fall back to person context (email-based lookup)
+      const personContext = await fetchPersonContext(intent.entities.person_names[0]);
+      contextString = formatPersonForPrompt(personContext);
+    }
   }
 
   // Check for meeting references
@@ -467,6 +493,85 @@ async function handleInfoQuery(
   return {
     success: true,
     response: parsed.answer + (parsed.details.length > 0 ? '\n\n' + parsed.details.join('\n') : ''),
+    type: 'info',
+    confidence: parsed.confidence,
+    intent,
+  };
+}
+
+/**
+ * Handle entity query - questions about specific people, organizations, or projects
+ * Uses the entity system for comprehensive context
+ */
+async function handleEntityQuery(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('👤 Handling entity query:', message);
+
+  // Extract entity names from the message
+  const detectedNames = extractEntityNamesFromMessage(message);
+  const allNames = [...new Set([...intent.entities.person_names, ...detectedNames])];
+
+  if (allNames.length === 0) {
+    return {
+      success: true,
+      response: "I couldn't identify a specific person, organization, or project in your question. Could you mention who or what you'd like to know about?",
+      type: 'info',
+      confidence: 'low',
+      intent,
+    };
+  }
+
+  // Fetch entity context for all detected names
+  const entityContexts = await fetchMultiEntityContext(allNames);
+
+  if (entityContexts.size === 0) {
+    // No entities found in the system
+    return {
+      success: true,
+      response: `I don't have information about ${allNames.join(' or ')} in my system yet. They may appear once I process more emails, calendar events, or documents.`,
+      type: 'info',
+      confidence: 'medium',
+      intent,
+    };
+  }
+
+  // Format context for AI
+  const contextString = formatMultiEntityForPrompt(entityContexts);
+
+  // Generate entity-aware response
+  const userPrompt = `User question: "${message}"\n\n${contextString}`;
+  const aiResponse = await callAI(ENTITY_QUERY_PROMPT, userPrompt);
+  const parsed = parseEntityQueryResponse(aiResponse);
+
+  // Build response
+  const responseLines = [parsed.summary];
+
+  if (parsed.context) {
+    responseLines.push('');
+    responseLines.push(parsed.context);
+  }
+
+  if (parsed.pending_items.length > 0) {
+    responseLines.push('');
+    responseLines.push('**Pending Items:**');
+    parsed.pending_items.forEach(item => {
+      responseLines.push(`- ${item}`);
+    });
+  }
+
+  if (parsed.suggested_actions.length > 0) {
+    responseLines.push('');
+    responseLines.push('**Suggested Actions:**');
+    parsed.suggested_actions.forEach(action => {
+      responseLines.push(`- ${action}`);
+    });
+  }
+
+  return {
+    success: true,
+    response: responseLines.join('\n'),
     type: 'info',
     confidence: parsed.confidence,
     intent,
@@ -804,6 +909,140 @@ Provide a brief narrative summary followed by key action items if any. Do NOT us
   };
 }
 
+/**
+ * Handle entity update - user is teaching the system about people/organizations
+ */
+async function handleEntityUpdate(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('👤 Handling entity update:', message);
+
+  // Build a prompt for entity extraction from the user's statement
+  const extractionPrompt = `Extract entities and relationships from this user statement. The user is explicitly telling you about people, organizations, or projects they want you to remember.
+
+## USER STATEMENT
+"${message}"
+
+## NOTES
+- The user is providing factual information to store
+- Extract all entities mentioned (people, organizations, projects, deals)
+- Extract relationships between entities (works_at, involved_in, etc.)
+- Any descriptive context (like "representing our project") should be captured in the entity's description field
+- Set confidence to 1.0 since this is user-verified information`;
+
+  // Use AI to extract entities
+  const aiResponse = await callAI(ENTITY_EXTRACTION_SYSTEM_PROMPT, extractionPrompt);
+  const extracted = parseExtractionResponse(aiResponse);
+
+  if (extracted.entities.length === 0) {
+    return {
+      success: true,
+      response: "I couldn't identify any specific people, organizations, or projects in your message. Could you try rephrasing? For example:\n- \"Jen Dalton is the real estate agent at Dalton Group\"\n- \"Mark works at Acme Corp as CFO\"\n- \"Remember that Sarah handles the Costa Rica deal\"",
+      type: 'general',
+      confidence: 'low',
+      intent,
+    };
+  }
+
+  // Set confidence to 1.0 for user-provided information
+  extracted.entities.forEach(e => {
+    e.confidence = 1.0;
+  });
+  extracted.relationships.forEach(r => {
+    r.confidence = 1.0;
+  });
+
+  // Upsert all entities and build a map for relationships
+  const entityMap = new Map<string, Entity>();
+  const savedEntities: Array<{ entity: Entity; isNew: boolean; merged?: string }> = [];
+
+  for (const extractedEntity of extracted.entities) {
+    // Check if entity already exists
+    const existingEntity = await findEntityByName(extractedEntity.name);
+
+    // Upsert the entity
+    const savedEntity = await upsertEntity(extractedEntity);
+
+    if (savedEntity) {
+      entityMap.set(extractedEntity.name, savedEntity);
+      savedEntities.push({
+        entity: savedEntity,
+        isNew: !existingEntity,
+        merged: existingEntity && existingEntity.name !== extractedEntity.name
+          ? existingEntity.name
+          : undefined,
+      });
+    }
+  }
+
+  // Create relationships
+  const savedRelationships: Array<{
+    source: string;
+    target: string;
+    type: string;
+  }> = [];
+
+  for (const rel of extracted.relationships) {
+    const sourceEntity = entityMap.get(rel.sourceEntity);
+    const targetEntity = entityMap.get(rel.targetEntity);
+
+    if (sourceEntity && targetEntity) {
+      await upsertRelationship(
+        sourceEntity.id,
+        targetEntity.id,
+        rel.type,
+        rel.confidence,
+        rel.context ? { context: rel.context } : {}
+      );
+      savedRelationships.push({
+        source: sourceEntity.name,
+        target: targetEntity.name,
+        type: rel.type,
+      });
+    }
+  }
+
+  // Build response
+  const responseLines = ["Got it! I've saved:"];
+  responseLines.push('');
+
+  for (const { entity, isNew, merged } of savedEntities) {
+    const typeLabel = entity.type.charAt(0).toUpperCase() + entity.type.slice(1);
+    const role = entity.metadata?.role ? ` - ${entity.metadata.role}` : '';
+    const notes = entity.notes ? ` *${entity.notes}*` : '';
+
+    if (merged) {
+      responseLines.push(`- **${entity.name}**${role} (merged with existing "${merged}")${notes}`);
+    } else if (isNew) {
+      responseLines.push(`- **${entity.name}** (${typeLabel})${role}${notes}`);
+    } else {
+      responseLines.push(`- **${entity.name}**${role} (updated)${notes}`);
+    }
+  }
+
+  if (savedRelationships.length > 0) {
+    responseLines.push('');
+    responseLines.push('**Relationships:**');
+    for (const rel of savedRelationships) {
+      const relLabel = rel.type.replace(/_/g, ' ');
+      responseLines.push(`- ${rel.source} ${relLabel} ${rel.target}`);
+    }
+  }
+
+  responseLines.push('');
+  responseLines.push("I'll remember this when you ask about " +
+    savedEntities.map(e => e.entity.name).join(' or ') + '.');
+
+  return {
+    success: true,
+    response: responseLines.join('\n'),
+    type: 'info',
+    confidence: 'high',
+    intent,
+  };
+}
+
 // ============================================
 // MAIN HANDLER
 // ============================================
@@ -883,35 +1122,51 @@ export async function POST(request: NextRequest) {
     // Step 5: Route to appropriate handler
     let response: ChatResponse;
 
-    switch (intent.intent) {
-      case 'knowledge_question':
-        response = await handleKnowledgeQuestion(message, intent);
-        break;
-      case 'agenda_query':
-        response = await handleAgendaQuery(message, intent);
-        break;
-      case 'draft_generation':
-        response = await handleDraftGeneration(message, intent);
-        break;
-      case 'info_query':
-        response = await handleInfoQuery(message, intent);
-        break;
-      case 'task_creation':
-        response = await handleTaskCreation(message, intent);
-        break;
-      case 'event_creation':
-        response = await handleEventCreation(message, intent);
-        break;
-      case 'email_search':
-        response = await handleEmailSearch(message, intent);
-        break;
-      case 'summarization':
-        response = await handleSummarization(message, intent);
-        break;
-      case 'general':
-      default:
-        response = await handleGeneral(message, intent);
-        break;
+    // Check for entity-specific queries (e.g., "tell me about Jen", "who is Sarah")
+    const entityQueryPatterns = [
+      /^(?:tell me about|who is|what do you know about|info on|information about)\s+(.+)/i,
+      /^(?:what's happening with|what about)\s+(.+?)\??\s*$/i,
+    ];
+    const isEntityQuery = entityQueryPatterns.some(p => p.test(message)) &&
+                          intent.entities.person_names.length > 0;
+
+    if (isEntityQuery) {
+      // Route to entity handler for "tell me about X" type queries
+      response = await handleEntityQuery(message, intent);
+    } else {
+      switch (intent.intent) {
+        case 'knowledge_question':
+          response = await handleKnowledgeQuestion(message, intent);
+          break;
+        case 'agenda_query':
+          response = await handleAgendaQuery(message, intent);
+          break;
+        case 'draft_generation':
+          response = await handleDraftGeneration(message, intent);
+          break;
+        case 'info_query':
+          response = await handleInfoQuery(message, intent);
+          break;
+        case 'task_creation':
+          response = await handleTaskCreation(message, intent);
+          break;
+        case 'event_creation':
+          response = await handleEventCreation(message, intent);
+          break;
+        case 'email_search':
+          response = await handleEmailSearch(message, intent);
+          break;
+        case 'summarization':
+          response = await handleSummarization(message, intent);
+          break;
+        case 'entity_update':
+          response = await handleEntityUpdate(message, intent);
+          break;
+        case 'general':
+        default:
+          response = await handleGeneral(message, intent);
+          break;
+      }
     }
 
     // Add processing time

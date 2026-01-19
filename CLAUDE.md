@@ -157,10 +157,65 @@ Enhances Knowledge Base with answer generation, summaries, website crawling, and
 **New Dependencies:**
 - `cheerio` - HTML parsing for website crawler
 
-### Loop 6 - PLANNED
-**Entity System (People/Orgs)**
-- Track people and organizations across emails, documents, tasks
-- Relationship mapping and context
+### Loop 6 - COMPLETED
+**Entity System + Chat Intelligence**
+Transform the AI from a "data retriever" into a "business-aware assistant" by tracking entities and their relationships.
+
+**Entity Types**
+- `person` - Individuals (name, email, role, aliases)
+- `organization` - Companies, teams, clients, vendors
+- `project` - Named projects, initiatives, campaigns
+- `deal` - Business deals, contracts, agreements
+
+**Relationship Types**
+- `works_at` - Person → Organization
+- `owns` - Person → Organization
+- `client_of` / `vendor_of` - Organization relationships
+- `involved_in` - Person → Project/Deal
+
+**Calendar Query Fix**
+- Fixed date range query to use overlap logic (events spanning into range)
+- Changed default status from 'confirmed' to 'all'
+
+**Database Schema**
+- `supabase/migrations/011_entity_system.sql` - Entity tables
+- `entities` - Main entity table with aliases, metadata, mention counts
+- `entity_relationships` - Relationships between entities with confidence scores
+- `entity_mentions` - Links entities to source records (emails, tasks, events, docs)
+- `entity_processing_log` - Tracks which records have been processed
+- `find_entity_by_name()` - PostgreSQL function for name/alias lookup
+
+**Entity Extractor**
+- `lib/entities/extractor.ts` - AI-powered entity extraction
+- Prompts for extracting entities from emails, events, tasks
+- Pattern-based entity name detection for chat queries
+
+**Entity Queries**
+- `lib/entities/queries.ts` - CRUD operations
+- `findEntityByName()` / `findEntityByEmail()` - Lookups
+- `upsertEntity()` - Create or update entities
+- `getEntityRelationships()` - Get all relationships for an entity
+- `createEntityMention()` - Link entities to source records
+- `getUnprocessedSources()` - Find records needing entity extraction
+
+**Entity-Aware Context**
+- `lib/chat/context.ts` - Added entity context fetching
+- `fetchEntityContext(name)` - Comprehensive context for an entity
+- `formatEntityForPrompt()` - Format entity data for AI
+- Entity lookups include relationships, emails, tasks, meetings
+
+**Intelligent Chat**
+- `lib/ai/chat-prompts.ts` - Entity query prompts
+- `ENTITY_QUERY_PROMPT` - Generates responses about entities
+- `INTELLIGENT_ASSISTANT_PROMPT` - Business-aware assistant prompt
+- Chat now routes "tell me about X" queries to entity handler
+- Info queries enhanced with entity context
+
+**Background Sync**
+- `app/api/cron/sync-entities/route.ts` - Process records for entities
+- Extracts entities from emails, calendar events, tasks
+- Creates relationships and mentions
+- Tracks processing status to avoid re-processing
 
 ### Loop 7 - COMPLETED
 **Conversational Interface**
@@ -168,7 +223,7 @@ Chat-first interface for natural language queries, agenda summaries, and draft g
 
 **Intent Classification**
 - `lib/ai/chat-prompts.ts` - Intent classifier, agenda synthesis, draft generation prompts
-- 5 intent types: knowledge_question, agenda_query, draft_generation, info_query, general
+- 10 intent types: knowledge_question, agenda_query, draft_generation, info_query, task_creation, event_creation, email_search, summarization, entity_update, general
 
 **Context Fetching**
 - `lib/chat/context.ts` - Unified context fetchers for agenda, person, and KB data
@@ -196,6 +251,35 @@ Chat-first interface for natural language queries, agenda summaries, and draft g
 - Email draft generation with approval workflow
 - Specific lookups (meetings, tasks, people)
 - Prominent "Chat with Assistant" button on home page
+
+### Loop 7.5 - COMPLETED
+**Manual Entity Creation via Chat**
+Allows users to teach the system about people/organizations through natural conversation.
+
+**Entity Update Intent**
+- New `entity_update` intent type added to intent classifier
+- Detects phrases like "X is the Y", "X works at Y", "Remember that X..."
+- Routes to dedicated handler for entity creation/update
+
+**Handler Implementation**
+- `handleEntityUpdate()` in `app/api/chat/route.ts`
+- Uses `ENTITY_EXTRACTION_SYSTEM_PROMPT` to parse user statements
+- Extracts entities (person, organization, project, deal) and relationships
+- Sets confidence to 1.0 for user-verified information
+- Upserts entities and creates relationships
+- Returns confirmation with what was saved
+
+**Entity Notes Field**
+- `supabase/migrations/012_entity_notes.sql` - Adds notes column to entities
+- Stores user-provided context like "representing our project"
+- Different from description (AI-generated) - notes are user-provided
+- Notes are merged when entities are updated
+
+**Example Usage**
+- "Jen Dalton is the real estate agent at Dalton Group" → Creates person + org + relationship
+- "Sarah works at Acme Corp as the CFO" → Creates person with role, org, works_at relationship
+- "Remember that the Costa Rica deal is handled by Jen" → Creates deal entity, links to Jen
+- "Jen's email is jen@daltongroup.com" → Updates existing Jen entity with email
 
 ### Loop 8 - PLANNED
 **Multi-Source Ingestion**
@@ -244,6 +328,12 @@ Chat-first interface for natural language queries, agenda summaries, and draft g
 - `task_documents` - Task-document links with relevance scores
 - `kb_search_history` - Search query analytics
 
+### Loop 6 Tables (Entity System)
+- `entities` - People, organizations, projects, deals with aliases and metadata
+- `entity_relationships` - Relationships between entities (works_at, client_of, involved_in, etc.)
+- `entity_mentions` - Links entities to source records (email, task, calendar_event, kb_document)
+- `entity_processing_log` - Tracks which records have been processed for entity extraction
+
 ### Key Views
 - `waiting_on_threads` - Threads I'm waiting on with days_waiting
 - `pending_approvals_count` - Counts for nav badges
@@ -281,8 +371,9 @@ Chat-first interface for natural language queries, agenda summaries, and draft g
 - `app/api/kb/websites/[id]/route.ts` - Website management (Loop 5.5)
 - `app/api/kb/documents/[id]/priority/route.ts` - Document priority updates (Loop 5.5)
 - `app/api/tasks/[id]/context/route.ts` - Task-document context (Loop 5)
-- `app/api/chat/route.ts` - Chat endpoint with intent classification (Loop 7)
+- `app/api/chat/route.ts` - Chat endpoint with intent classification and entity routing (Loop 6/7)
 - `app/api/chat/approve/route.ts` - Action approval (email send) (Loop 7)
+- `app/api/cron/sync-entities/route.ts` - Extract entities from emails, events, tasks (Loop 6)
 
 ### Pages
 - `app/page.tsx` - Home with navigation (+ Chat button)
@@ -346,8 +437,10 @@ Chat-first interface for natural language queries, agenda summaries, and draft g
 - `lib/ai/scheduling-suggestions.ts` - AI scheduling suggestions logic (Loop 4)
 - `lib/ai/answer-generation-prompt.ts` - AI prompt for grounded answers (Loop 5.5)
 - `lib/ai/summary-generation-prompt.ts` - AI prompt for document summaries (Loop 5.5)
-- `lib/ai/chat-prompts.ts` - Chat intent classifier and response prompts (Loop 7)
-- `lib/chat/context.ts` - Unified context fetching for chat (Loop 7)
+- `lib/ai/chat-prompts.ts` - Chat intent classifier, response prompts, and entity prompts (Loop 6/7)
+- `lib/chat/context.ts` - Unified context fetching for chat and entities (Loop 6/7)
+- `lib/entities/extractor.ts` - AI-powered entity extraction from text (Loop 6)
+- `lib/entities/queries.ts` - Entity CRUD operations and lookups (Loop 6)
 - `lib/notifications/push.ts` - Web Push notification sender
 - `lib/notifications/brief-generator.ts` - AI-powered brief content generation (+ calendar insights)
 
@@ -361,6 +454,7 @@ Chat-first interface for natural language queries, agenda summaries, and draft g
 - `supabase/migrations/003_briefs_notifications.sql` - Loop 3 schema
 - `supabase/migrations/005_calendar_schema.sql` - Loop 4 schema (calendar events, prep packets, scheduling)
 - `supabase/migrations/007_knowledge_base_schema.sql` - Loop 5 schema (KB folders, documents, chunks with pgvector)
+- `supabase/migrations/011_entity_system.sql` - Loop 6 schema (entities, relationships, mentions)
 
 ## CONFIGURATION
 
@@ -407,9 +501,13 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 - Loop 4: COMPLETE - AI-Powered Productivity Calendar
 - Loop 5: COMPLETE - Knowledge Base + RAG System
 - Loop 5.5: COMPLETE - RAG Improvements (Answer Generation, Summaries, Website Crawler, Priority UI)
+- Loop 6: COMPLETE - Entity System + Chat Intelligence (People, Orgs, Relationships)
 - Loop 7: COMPLETE - Conversational Interface (Chat UI, Intent Classification, Draft Generation)
+- Loop 7.5: COMPLETE - Manual Entity Creation via Chat
 - Migration 007: NEEDS TO BE APPLIED to Supabase (requires pgvector extension)
 - Migration 009: NEEDS TO BE APPLIED for Loop 5.5 features (priority, summaries, websites)
+- Migration 011: NEEDS TO BE APPLIED for Loop 6 entity system
+- Migration 012: APPLIED for Loop 7.5 entity notes field
 - Deployment: LIVE at https://personal-assistant-ai-lime.vercel.app
 - Cron Jobs (cron-job.org):
   - process-emails: every 1 min
@@ -420,6 +518,7 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
   - sync-drive: every 30 min (NEEDS SETUP)
   - process-kb: every 10 min (NEEDS SETUP)
   - crawl-websites: every 6 hours (NEEDS SETUP)
+  - sync-entities: every 30 min (NEEDS SETUP)
 
 ## CRON JOB SETUP
 
@@ -434,10 +533,18 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 | Sync Drive | `https://personal-assistant-ai-lime.vercel.app/api/cron/sync-drive` | Every 30 min | - |
 | Process KB | `https://personal-assistant-ai-lime.vercel.app/api/cron/process-kb` | Every 10 min | - |
 | Crawl Websites | `https://personal-assistant-ai-lime.vercel.app/api/cron/crawl-websites` | Every 6 hours | - |
+| Sync Entities | `https://personal-assistant-ai-lime.vercel.app/api/cron/sync-entities` | Every 30 min | - |
 
 All cron jobs require `Authorization: Bearer {CRON_SECRET}` header.
 
 ## NEXT STEPS
+
+### Loop 6 Deployment (Entity System)
+1. Apply migration 011 to Supabase for entity system tables
+2. Set up sync-entities cron job on cron-job.org (every 30 min)
+3. Deploy to Vercel
+4. Test entity queries in chat: "Tell me about Jen", "Who is Sarah?"
+5. Entity data will populate as the cron job processes existing records
 
 ### Loop 5.5 Deployment (RAG Improvements)
 1. Apply migration 009 to Supabase for Loop 5.5 features (priority, summaries, kb_websites table)

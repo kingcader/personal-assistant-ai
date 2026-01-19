@@ -39,7 +39,13 @@ export const INTENT_CLASSIFIER_PROMPT = `You are an intent classifier for a pers
 8. **summarization** - Requests for summaries, digests, or overviews of the day/week/tasks
    - Examples: "Summarize my day", "Give me a recap", "What's the overview?", "Brief me on today"
 
-9. **general** - General conversation, greetings, or questions that don't fit other categories
+9. **entity_update** - User is providing information about a person, organization, or project to remember
+   - "X is the Y" / "X works at Y" / "X is from Y"
+   - "Remember that X..." / "Save X as..."
+   - Adding context about people/orgs
+   - Examples: "Jen Dalton is the real estate agent at Dalton Group", "Mark is our accountant", "Remember that Sarah handles the Costa Rica deal"
+
+10. **general** - General conversation, greetings, or questions that don't fit other categories
    - Examples: "Hello", "How are you?", "What can you help me with?"
 
 ## CONVERSATION CONTEXT
@@ -59,7 +65,7 @@ Examples with context:
 
 Return a JSON object with this exact structure:
 {
-  "intent": "knowledge_question" | "agenda_query" | "draft_generation" | "info_query" | "task_creation" | "event_creation" | "email_search" | "summarization" | "general",
+  "intent": "knowledge_question" | "agenda_query" | "draft_generation" | "info_query" | "task_creation" | "event_creation" | "email_search" | "summarization" | "entity_update" | "general",
   "confidence": "high" | "medium" | "low",
   "entities": {
     "person_names": ["name1", "name2"],
@@ -196,7 +202,7 @@ Return a JSON object with this structure:
  * Parse intent classification response
  */
 export interface IntentClassification {
-  intent: 'knowledge_question' | 'agenda_query' | 'draft_generation' | 'info_query' | 'task_creation' | 'event_creation' | 'email_search' | 'summarization' | 'general';
+  intent: 'knowledge_question' | 'agenda_query' | 'draft_generation' | 'info_query' | 'task_creation' | 'event_creation' | 'email_search' | 'summarization' | 'entity_update' | 'general';
   confidence: 'high' | 'medium' | 'low';
   entities: {
     person_names: string[];
@@ -217,6 +223,7 @@ const VALID_INTENTS = [
   'event_creation',
   'email_search',
   'summarization',
+  'entity_update',
   'general',
 ];
 
@@ -420,6 +427,135 @@ export function parseInfoResponse(response: string): InfoQueryResponse {
       found: false,
       confidence: 'low',
       suggestions: [],
+    };
+  }
+}
+
+// ============================================
+// ENTITY-AWARE PROMPTS (Loop 6)
+// ============================================
+
+/**
+ * Entity Query Prompt
+ * Generates responses about specific entities using their context
+ */
+export const ENTITY_QUERY_PROMPT = `You are a business-aware personal assistant. You have comprehensive knowledge about the user's contacts, organizations, and projects.
+
+## CONTEXT FORMAT
+
+You'll receive entity context including:
+- **Entity Details**: Name, email, role, description, aliases
+- **Relationships**: Who they work with, what organizations they're part of
+- **Recent Emails**: Recent email exchanges with this person/org
+- **Related Tasks**: Tasks that mention this entity
+- **Upcoming Meetings**: Scheduled events with this person
+
+## RESPONSE GUIDELINES
+
+1. **Lead with the direct answer** to what was asked
+2. **Connect the dots**: Mention relevant relationships and context
+   - "Jen works at Acme Corp, and she's been your main contact for the Costa Rica deal."
+3. **Surface relevant activity**: Recent emails, pending tasks, upcoming meetings
+   - "I see 3 emails from her this week about the contract..."
+4. **Be proactive**: If there are pending items or overdue tasks, mention them
+   - "There's also an overdue task to review the payment terms with her."
+5. **Suggest actions** when appropriate
+   - "Would you like me to draft a follow-up email to her?"
+
+## RESPONSE FORMAT
+
+Return a JSON object:
+{
+  "summary": "Direct answer about the entity",
+  "context": "Additional context from relationships, emails, tasks",
+  "pending_items": ["Any pending tasks or actions related to this entity"],
+  "suggested_actions": ["Possible next steps"],
+  "confidence": "high" | "medium" | "low"
+}
+
+## TONE
+
+- Conversational and natural, not robotic
+- Reference relationships naturally ("Since she's your contact at Acme...")
+- Be concise but comprehensive`;
+
+/**
+ * Intelligent Assistant System Prompt
+ * Enhanced prompt that leverages entity context for smarter responses
+ */
+export const INTELLIGENT_ASSISTANT_PROMPT = `You are an expert personal assistant who deeply understands the user's business relationships and context.
+
+## WHAT YOU KNOW
+
+You have access to:
+- **Entities**: Key people, organizations, and projects the user works with
+- **Relationships**: How entities connect (e.g., Jen works at Acme, Acme is the client for Costa Rica deal)
+- **History**: Recent emails, tasks, and meetings involving these entities
+- **Documents**: Contracts, agreements, and knowledge base content
+
+## HOW TO RESPOND
+
+1. **Connect the dots**: When someone asks about Jen, you know she's at Acme, working on the Costa Rica deal, and there's a pending contract review.
+
+2. **Be proactive**: "You have a meeting with Jen tomorrow. She's sent 3 emails this week about the contract. There's also an overdue task to review payment terms."
+
+3. **Maintain context**: Reference relationships naturally. "Since Jen is your main contact at Acme..."
+
+4. **Suggest actions**: "Would you like me to draft a meeting agenda for tomorrow's call with Jen?"
+
+5. **Cite sources**: When referencing specific information, mention where it came from (email, task, document).
+
+## RESPONSE STYLE
+
+- Conversational, not robotic
+- Lead with the direct answer
+- Add 1-2 relevant insights from entity connections
+- Offer a suggested next action when appropriate
+- Keep responses concise but helpful
+
+## GUIDELINES
+
+- Don't make up information - only use what's provided in the context
+- If information is missing, say so clearly
+- Prioritize actionable insights over raw data dumps
+- When multiple entities are mentioned, connect their relationships`;
+
+/**
+ * Parse entity query response
+ */
+export interface EntityQueryResponse {
+  summary: string;
+  context: string;
+  pending_items: string[];
+  suggested_actions: string[];
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export function parseEntityQueryResponse(response: string): EntityQueryResponse {
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    return {
+      summary: parsed.summary || 'Unable to generate summary',
+      context: parsed.context || '',
+      pending_items: parsed.pending_items || [],
+      suggested_actions: parsed.suggested_actions || [],
+      confidence: ['high', 'medium', 'low'].includes(parsed.confidence)
+        ? parsed.confidence
+        : 'low',
+    };
+  } catch {
+    return {
+      summary: 'Unable to process entity query',
+      context: '',
+      pending_items: [],
+      suggested_actions: [],
+      confidence: 'low',
     };
   }
 }

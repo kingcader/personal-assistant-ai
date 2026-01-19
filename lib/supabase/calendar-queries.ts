@@ -181,17 +181,19 @@ export async function upsertCalendarEvent(
 
 /**
  * Get calendar events within a date range
+ * Uses overlap logic: events that start before range ends AND end after range starts
  */
 export async function getCalendarEvents(
   startDate: Date,
   endDate: Date,
-  status: 'confirmed' | 'tentative' | 'cancelled' | 'all' = 'confirmed'
+  status: 'confirmed' | 'tentative' | 'cancelled' | 'all' = 'all'
 ): Promise<DBCalendarEvent[]> {
   let query = supabase
     .from('calendar_events')
     .select('*')
-    .gte('start_time', startDate.toISOString())
-    .lte('start_time', endDate.toISOString())
+    // Events that OVERLAP with the range (not just start within it)
+    .lte('start_time', endDate.toISOString())   // Starts before range ends
+    .gte('end_time', startDate.toISOString())   // Ends after range starts
     .order('start_time', { ascending: true });
 
   if (status !== 'all') {

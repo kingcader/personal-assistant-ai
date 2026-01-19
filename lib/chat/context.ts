@@ -19,6 +19,14 @@ import {
   EmailSearchResult,
   parseRelativeDate,
 } from '@/lib/supabase/email-queries';
+import {
+  findEntityByName,
+  getEntityRelationships,
+  getEntityMentions,
+  Entity,
+  EntityMention,
+} from '@/lib/entities/queries';
+import type { RelationshipType } from '@/lib/entities/extractor';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -691,6 +699,231 @@ export function formatEmailSearchForPrompt(context: EmailSearchContext): string 
     lines.push(`    Preview: ${email.snippet}`);
     lines.push('');
   });
+
+  return lines.join('\n');
+}
+
+// ============================================
+// ENTITY CONTEXT (Loop 6)
+// ============================================
+
+export interface EntityContext {
+  entity: Entity;
+  relationships: Array<{
+    entity: Entity;
+    type: RelationshipType;
+    direction: 'outgoing' | 'incoming';
+  }>;
+  recentMentions: EntityMention[];
+  relatedEmails: EmailSearchResult[];
+  relatedTasks: TaskContext[];
+  relatedEvents: DBCalendarEvent[];
+}
+
+/**
+ * Fetch comprehensive context for an entity
+ * Used by chat to provide entity-aware responses
+ */
+export async function fetchEntityContext(entityName: string): Promise<EntityContext | null> {
+  // 1. Find entity by name or alias
+  const entity = await findEntityByName(entityName);
+  if (!entity) return null;
+
+  // 2. Get relationships
+  const relationships = await getEntityRelationships(entity.id);
+
+  // 3. Get recent mentions
+  const recentMentions = await getEntityMentions(entity.id, 10);
+
+  // 4. Fetch related records based on entity type and email
+  const [emailsResult, tasksResult, eventsResult] = await Promise.all([
+    // Get emails from/to this entity (if person with email)
+    entity.email
+      ? searchEmails({ senderEmail: entity.email, limit: 5 })
+      : Promise.resolve({ results: [], total: 0, searchParams: {} }),
+
+    // Get tasks mentioning this entity (search by name in title)
+    supabase
+      .from('tasks')
+      .select('id, title, description, due_date, priority, status, scheduled_start, scheduled_end')
+      .or(`title.ilike.%${entity.name}%,description.ilike.%${entity.name}%`)
+      .not('status', 'in', '("completed","cancelled")')
+      .order('created_at', { ascending: false })
+      .limit(5),
+
+    // Get events with this entity as attendee (if person with email)
+    entity.email
+      ? getCalendarEvents(
+          new Date(),
+          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // Next 30 days
+        )
+      : Promise.resolve([]),
+  ]);
+
+  // Filter events that include this entity as attendee
+  const relatedEvents = entity.email
+    ? eventsResult.filter(event => {
+        if (!event.attendees) return false;
+        return event.attendees.some(
+          (a: { email: string }) => a.email.toLowerCase() === entity.email!.toLowerCase()
+        );
+      })
+    : [];
+
+  return {
+    entity,
+    relationships,
+    recentMentions,
+    relatedEmails: emailsResult.results,
+    relatedTasks: (tasksResult.data || []) as TaskContext[],
+    relatedEvents,
+  };
+}
+
+/**
+ * Format entity context as a string for AI prompt
+ */
+export function formatEntityForPrompt(context: EntityContext): string {
+  const lines: string[] = [];
+  const { entity, relationships, relatedEmails, relatedTasks, relatedEvents } = context;
+
+  // Entity header
+  const entityTypeLabel = entity.type.charAt(0).toUpperCase() + entity.type.slice(1);
+  lines.push(`## ${entityTypeLabel.toUpperCase()}: ${entity.name}\n`);
+
+  // Basic info
+  if (entity.email) {
+    lines.push(`Email: ${entity.email}`);
+  }
+  if (entity.description) {
+    lines.push(`Description: ${entity.description}`);
+  }
+  if (entity.metadata && Object.keys(entity.metadata).length > 0) {
+    if (entity.metadata.role) {
+      lines.push(`Role: ${entity.metadata.role}`);
+    }
+  }
+  if (entity.aliases && entity.aliases.length > 0) {
+    lines.push(`Also known as: ${entity.aliases.join(', ')}`);
+  }
+  lines.push('');
+
+  // Relationships
+  if (relationships.length > 0) {
+    lines.push('### Relationships');
+    relationships.forEach(rel => {
+      const direction = rel.direction === 'outgoing'
+        ? `${entity.name} → ${rel.entity.name}`
+        : `${rel.entity.name} → ${entity.name}`;
+      const typeLabel = rel.type.replace(/_/g, ' ');
+      lines.push(`- ${direction} (${typeLabel})`);
+    });
+    lines.push('');
+  }
+
+  // Recent emails
+  if (relatedEmails.length > 0) {
+    lines.push('### Recent Emails');
+    relatedEmails.forEach(email => {
+      const date = new Date(email.date).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+      lines.push(`- [${date}] "${email.subject}"`);
+    });
+    lines.push('');
+  }
+
+  // Related tasks
+  if (relatedTasks.length > 0) {
+    lines.push('### Related Tasks');
+    relatedTasks.forEach(task => {
+      const priority = task.priority === 'high' ? '!' : '';
+      const dueInfo = task.due_date
+        ? ` (due ${new Date(task.due_date).toLocaleDateString()})`
+        : '';
+      lines.push(`- ${priority}${task.title}${dueInfo}`);
+    });
+    lines.push('');
+  }
+
+  // Upcoming meetings
+  if (relatedEvents.length > 0) {
+    lines.push('### Upcoming Meetings');
+    relatedEvents.slice(0, 5).forEach(event => {
+      const date = new Date(event.start_time).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+      const time = new Date(event.start_time).toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+      lines.push(`- [${date} ${time}] ${event.summary || 'Untitled'}`);
+    });
+    lines.push('');
+  }
+
+  // Stats
+  lines.push('### Activity');
+  lines.push(`- Mentioned ${entity.mention_count} times`);
+  if (entity.last_seen_at) {
+    const lastSeen = new Date(entity.last_seen_at).toLocaleDateString();
+    lines.push(`- Last seen: ${lastSeen}`);
+  }
+  if (entity.first_seen_at) {
+    const firstSeen = new Date(entity.first_seen_at).toLocaleDateString();
+    lines.push(`- First seen: ${firstSeen}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Fetch context for multiple entities at once
+ * Used when a message mentions multiple people/orgs
+ */
+export async function fetchMultiEntityContext(
+  entityNames: string[]
+): Promise<Map<string, EntityContext>> {
+  const results = new Map<string, EntityContext>();
+
+  // Fetch all entity contexts in parallel
+  const contexts = await Promise.all(
+    entityNames.map(async (name) => {
+      const context = await fetchEntityContext(name);
+      return { name, context };
+    })
+  );
+
+  // Build the map
+  for (const { name, context } of contexts) {
+    if (context) {
+      results.set(name, context);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Format multiple entity contexts for AI prompt
+ */
+export function formatMultiEntityForPrompt(
+  contexts: Map<string, EntityContext>
+): string {
+  if (contexts.size === 0) {
+    return 'No entity information found.';
+  }
+
+  const lines: string[] = [];
+  lines.push('## ENTITY CONTEXT\n');
+
+  for (const [name, context] of contexts) {
+    lines.push(formatEntityForPrompt(context));
+    lines.push('---\n');
+  }
 
   return lines.join('\n');
 }
