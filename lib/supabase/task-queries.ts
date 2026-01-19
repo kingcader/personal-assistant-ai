@@ -360,6 +360,54 @@ export async function upsertEmail(emailData: {
 const KINCAID_EMAIL = 'kincaidgarrett@gmail.com';
 
 /**
+ * Create a task directly (without going through suggestion flow)
+ * Used by chat interface for task creation
+ */
+export async function createTaskDirect(taskData: {
+  title: string;
+  description?: string | null;
+  due_date?: string | null;
+  priority?: 'low' | 'med' | 'high';
+  status?: 'todo' | 'in_progress';
+}): Promise<Task> {
+  // 1. Ensure owner exists in people table (upsert)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ownerData, error: ownerError } = await (supabase as any)
+    .from('people')
+    .upsert(
+      { email: KINCAID_EMAIL },
+      { onConflict: 'email', ignoreDuplicates: false }
+    )
+    .select()
+    .single();
+
+  if (ownerError || !ownerData) {
+    throw new Error(`Failed to create/find owner: ${ownerError?.message}`);
+  }
+
+  // 2. Create the task
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: taskResult, error: taskError } = await (supabase as any)
+    .from('tasks')
+    .insert({
+      owner_id: ownerData.id,
+      title: taskData.title,
+      description: taskData.description || null,
+      due_date: taskData.due_date || null,
+      priority: taskData.priority || 'med',
+      status: taskData.status || 'todo',
+    })
+    .select()
+    .single();
+
+  if (taskError || !taskResult) {
+    throw new Error(`Failed to create task: ${taskError?.message}`);
+  }
+
+  return taskResult as Task;
+}
+
+/**
  * Insert AI-generated suggestions
  * Used by N8N workflow after AI extraction
  * IMPORTANT: Only inserts suggestions for Kincaid (filters out any others)

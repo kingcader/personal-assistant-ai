@@ -1,0 +1,880 @@
+/**
+ * Chat API Endpoint
+ *
+ * Main conversational interface endpoint. Handles intent classification
+ * and routes to appropriate handlers (KB search, agenda, drafts, etc.)
+ *
+ * Part of Loop #7: Conversational Interface
+ *
+ * Usage: POST /api/chat
+ * Body: { message: string, conversationId?: string }
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import {
+  INTENT_CLASSIFIER_PROMPT,
+  AGENDA_SYNTHESIS_PROMPT,
+  DRAFT_GENERATION_PROMPT,
+  INFO_QUERY_PROMPT,
+  parseIntentResponse,
+  parseAgendaResponse,
+  parseDraftResponse,
+  parseInfoResponse,
+  IntentClassification,
+} from '@/lib/ai/chat-prompts';
+import {
+  ANSWER_GENERATION_SYSTEM_PROMPT,
+  buildAnswerPrompt,
+  parseAnswerResponse,
+} from '@/lib/ai/answer-generation-prompt';
+import {
+  fetchAgendaContext,
+  fetchPersonContext,
+  fetchKBContext,
+  formatAgendaForPrompt,
+  formatPersonForPrompt,
+  formatKBForPrompt,
+  findMeeting,
+  findTask,
+  searchEmailsContext,
+  formatEmailSearchForPrompt,
+} from '@/lib/chat/context';
+import { logAuditEvent } from '@/lib/supabase/audit-queries';
+import { getDriveFileUrl } from '@/lib/google/drive';
+import {
+  createConversation,
+  addMessage,
+  getConversation,
+} from '@/lib/supabase/conversation-queries';
+import {
+  getTaskExtractionSystemPrompt,
+  buildTaskExtractionPrompt,
+  parseTaskExtractionResponse,
+} from '@/lib/ai/chat-task-prompt';
+import {
+  getEventExtractionSystemPrompt,
+  buildEventExtractionPrompt,
+  parseEventExtractionResponse,
+  calculateEndTime,
+} from '@/lib/ai/chat-event-prompt';
+
+export const dynamic = 'force-dynamic';
+
+// ============================================
+// TYPES
+// ============================================
+
+interface Citation {
+  fileName: string;
+  sectionTitle: string | null;
+  driveUrl: string;
+  sourceUrl: string | null;
+  excerpt: string;
+  similarity: number;
+  truthPriority: string | null;
+}
+
+interface ChatAction {
+  type: 'send_email' | 'create_task' | 'create_event';
+  status: 'pending_approval';
+  data: Record<string, unknown>;
+}
+
+interface ChatResponse {
+  success: boolean;
+  response: string;
+  type: 'answer' | 'draft' | 'agenda' | 'info' | 'general' | 'search_results';
+  citations?: Citation[];
+  confidence?: 'high' | 'medium' | 'low';
+  action?: ChatAction;
+  intent?: IntentClassification;
+  processingMs?: number;
+  error?: string;
+  conversationId?: string;
+  messageId?: string;
+  searchResults?: EmailSearchResult[];
+}
+
+interface EmailSearchResult {
+  id: string;
+  subject: string;
+  snippet: string;
+  sender: string;
+  senderEmail: string;
+  date: string;
+  threadId?: string | null;
+  hasAttachments?: boolean;
+}
+
+// ============================================
+// AI HELPERS
+// ============================================
+
+/**
+ * Call AI with a system prompt and user message
+ */
+async function callAI(
+  systemPrompt: string,
+  userMessage: string
+): Promise<string> {
+  const provider = process.env.AI_PROVIDER || 'openai';
+
+  if (provider === 'anthropic') {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Anthropic API error: ${error}`);
+    }
+
+    const data = await response.json();
+    return data.content[0]?.text || '';
+  } else {
+    // OpenAI
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        temperature: 0.3,
+        max_tokens: 2048,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`OpenAI API error: ${error}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0]?.message?.content || '';
+  }
+}
+
+/**
+ * Classify the intent of a user message
+ */
+async function classifyIntent(message: string): Promise<IntentClassification> {
+  const response = await callAI(
+    INTENT_CLASSIFIER_PROMPT,
+    `Classify this message:\n\n"${message}"`
+  );
+  return parseIntentResponse(response);
+}
+
+// ============================================
+// INTENT HANDLERS
+// ============================================
+
+/**
+ * Handle knowledge question - search KB and generate grounded answer
+ */
+async function handleKnowledgeQuestion(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('📚 Handling knowledge question:', message);
+
+  // Fetch relevant KB chunks
+  const kbContext = await fetchKBContext(message);
+
+  if (kbContext.chunks.length === 0) {
+    return {
+      success: true,
+      response: "I couldn't find any relevant information in the knowledge base to answer your question. Try rephrasing your query or ensure the relevant documents have been indexed.",
+      type: 'answer',
+      citations: [],
+      confidence: 'low',
+      intent,
+    };
+  }
+
+  // Prepare chunks for AI
+  const chunksForAI = kbContext.chunks.map(chunk => ({
+    content: chunk.content,
+    fileName: chunk.file_name,
+    sectionTitle: chunk.section_title,
+    similarity: chunk.similarity,
+    truthPriority: chunk.truth_priority,
+  }));
+
+  // Generate answer
+  const userPrompt = buildAnswerPrompt(message, chunksForAI);
+  const aiResponse = await callAI(ANSWER_GENERATION_SYSTEM_PROMPT, userPrompt);
+  const parsedAnswer = parseAnswerResponse(aiResponse);
+
+  // Build citations
+  const citations: Citation[] = parsedAnswer.sourcesUsed
+    .filter(idx => idx >= 0 && idx < kbContext.chunks.length)
+    .map(idx => {
+      const chunk = kbContext.chunks[idx];
+      return {
+        fileName: chunk.file_name,
+        sectionTitle: chunk.section_title,
+        driveUrl: chunk.drive_file_id ? getDriveFileUrl(chunk.drive_file_id) : '',
+        sourceUrl: null,
+        excerpt: chunk.content.substring(0, 200) + (chunk.content.length > 200 ? '...' : ''),
+        similarity: chunk.similarity,
+        truthPriority: chunk.truth_priority,
+      };
+    });
+
+  // If AI didn't specify sources, include top chunks
+  if (citations.length === 0) {
+    kbContext.chunks.slice(0, 3).forEach(chunk => {
+      citations.push({
+        fileName: chunk.file_name,
+        sectionTitle: chunk.section_title,
+        driveUrl: chunk.drive_file_id ? getDriveFileUrl(chunk.drive_file_id) : '',
+        sourceUrl: null,
+        excerpt: chunk.content.substring(0, 200) + (chunk.content.length > 200 ? '...' : ''),
+        similarity: chunk.similarity,
+        truthPriority: chunk.truth_priority,
+      });
+    });
+  }
+
+  return {
+    success: true,
+    response: parsedAnswer.answer,
+    type: 'answer',
+    citations,
+    confidence: parsedAnswer.confidence,
+    intent,
+  };
+}
+
+/**
+ * Handle agenda query - synthesize today's overview
+ */
+async function handleAgendaQuery(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('📅 Handling agenda query:', message);
+
+  // Fetch all agenda context
+  const agendaContext = await fetchAgendaContext();
+
+  // Format for AI prompt
+  const contextString = formatAgendaForPrompt(agendaContext);
+
+  // Generate synthesis
+  const aiResponse = await callAI(
+    AGENDA_SYNTHESIS_PROMPT,
+    `User question: "${message}"\n\n${contextString}`
+  );
+  const parsed = parseAgendaResponse(aiResponse);
+
+  // Format a human-readable response
+  const lines: string[] = [parsed.summary, ''];
+
+  if (parsed.meetings.count > 0) {
+    lines.push(`**Meetings**: ${parsed.meetings.count} today${parsed.meetings.first_meeting ? ` (first at ${parsed.meetings.first_meeting})` : ''}`);
+  }
+
+  if (parsed.tasks.total_due > 0) {
+    lines.push(`**Tasks Due**: ${parsed.tasks.total_due}${parsed.tasks.high_priority > 0 ? ` (${parsed.tasks.high_priority} high priority)` : ''}`);
+  }
+
+  if (parsed.waiting_on.count > 0) {
+    lines.push(`**Waiting On**: ${parsed.waiting_on.count} thread${parsed.waiting_on.count > 1 ? 's' : ''}`);
+  }
+
+  if (parsed.pending_approvals.count > 0) {
+    lines.push(`**Pending Approvals**: ${parsed.pending_approvals.count}`);
+  }
+
+  if (parsed.priority_focus) {
+    lines.push('');
+    lines.push(`**Focus**: ${parsed.priority_focus}`);
+  }
+
+  return {
+    success: true,
+    response: lines.join('\n'),
+    type: 'agenda',
+    confidence: 'high',
+    intent,
+  };
+}
+
+/**
+ * Handle draft generation - create email draft
+ */
+async function handleDraftGeneration(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('✍️ Handling draft generation:', message);
+
+  let contextString = '';
+
+  // If we have a person name, fetch their context
+  if (intent.entities.person_names.length > 0) {
+    const personName = intent.entities.person_names[0];
+    const personContext = await fetchPersonContext(personName);
+    contextString = formatPersonForPrompt(personContext);
+
+    // If person has waiting-on threads, include that context
+    if (personContext.waitingOnThreads.length > 0) {
+      contextString += '\n\n### Thread Context (for follow-up)\n';
+      // We could fetch full thread context here for better follow-ups
+    }
+  }
+
+  // Generate draft
+  const userPrompt = `User request: "${message}"${contextString ? `\n\n${contextString}` : ''}`;
+  const aiResponse = await callAI(DRAFT_GENERATION_PROMPT, userPrompt);
+  const draft = parseDraftResponse(aiResponse);
+
+  // Build response with draft preview
+  const responseLines = [
+    `I've drafted an email for you:`,
+    '',
+    `**To:** ${draft.recipient_name || draft.recipient_email || '[Recipient]'}`,
+    `**Subject:** ${draft.subject}`,
+    '',
+    draft.body,
+  ];
+
+  if (draft.notes) {
+    responseLines.push('');
+    responseLines.push(`*Note: ${draft.notes}*`);
+  }
+
+  return {
+    success: true,
+    response: responseLines.join('\n'),
+    type: 'draft',
+    confidence: draft.confidence,
+    intent,
+    action: {
+      type: 'send_email',
+      status: 'pending_approval',
+      data: {
+        subject: draft.subject,
+        body: draft.body,
+        recipient_email: draft.recipient_email,
+        recipient_name: draft.recipient_name,
+        is_reply: draft.is_reply,
+        thread_id: draft.thread_id,
+      },
+    },
+  };
+}
+
+/**
+ * Handle info query - specific lookups
+ */
+async function handleInfoQuery(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('🔍 Handling info query:', message);
+
+  let contextString = '';
+
+  // Try to find relevant data based on the query
+  if (intent.entities.person_names.length > 0) {
+    const personContext = await fetchPersonContext(intent.entities.person_names[0]);
+    contextString = formatPersonForPrompt(personContext);
+  }
+
+  // Check for meeting references
+  const meetingKeywords = ['meeting', 'call', 'sync', 'event'];
+  const hasMeetingRef = meetingKeywords.some(k => message.toLowerCase().includes(k));
+  if (hasMeetingRef) {
+    // Try to find a specific meeting
+    const searchTerms = intent.entities.person_names.concat(intent.entities.topics);
+    for (const term of searchTerms) {
+      const meeting = await findMeeting(term);
+      if (meeting) {
+        contextString += `\n\n### Found Meeting\n`;
+        contextString += `- Summary: ${meeting.summary || 'Untitled'}\n`;
+        contextString += `- Time: ${new Date(meeting.start_time).toLocaleString()}\n`;
+        contextString += `- Attendees: ${(meeting.attendees || []).map((a: { email: string }) => a.email).join(', ')}\n`;
+        break;
+      }
+    }
+  }
+
+  // Check for task references
+  const taskKeywords = ['task', 'todo', 'assignment'];
+  const hasTaskRef = taskKeywords.some(k => message.toLowerCase().includes(k));
+  if (hasTaskRef) {
+    for (const topic of intent.entities.topics) {
+      const task = await findTask(topic);
+      if (task) {
+        contextString += `\n\n### Found Task\n`;
+        contextString += `- Title: ${task.title}\n`;
+        contextString += `- Status: ${task.status}\n`;
+        contextString += `- Priority: ${task.priority}\n`;
+        contextString += `- Due: ${task.due_date || 'No due date'}\n`;
+        break;
+      }
+    }
+  }
+
+  // Generate response
+  const userPrompt = `User question: "${message}"\n\nAvailable Data:\n${contextString || 'No specific data found.'}`;
+  const aiResponse = await callAI(INFO_QUERY_PROMPT, userPrompt);
+  const parsed = parseInfoResponse(aiResponse);
+
+  return {
+    success: true,
+    response: parsed.answer + (parsed.details.length > 0 ? '\n\n' + parsed.details.join('\n') : ''),
+    type: 'info',
+    confidence: parsed.confidence,
+    intent,
+  };
+}
+
+/**
+ * Handle task creation - extract task details and return for approval
+ */
+async function handleTaskCreation(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('📝 Handling task creation:', message);
+
+  // Extract task details using AI
+  const systemPrompt = getTaskExtractionSystemPrompt();
+  const userPrompt = buildTaskExtractionPrompt(message);
+  const aiResponse = await callAI(systemPrompt, userPrompt);
+  const task = parseTaskExtractionResponse(aiResponse);
+
+  // Format response
+  const responseLines = [
+    `I'll create this task for you:`,
+    '',
+    `**${task.title}**`,
+  ];
+
+  if (task.description) {
+    responseLines.push(`_${task.description}_`);
+  }
+
+  responseLines.push('');
+
+  const details: string[] = [];
+  if (task.due_date) {
+    const dateStr = new Date(task.due_date).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+    details.push(`Due: ${dateStr}${task.due_time ? ` at ${task.due_time}` : ''}`);
+  }
+  details.push(`Priority: ${task.priority === 'med' ? 'Medium' : task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}`);
+
+  responseLines.push(details.join(' | '));
+
+  return {
+    success: true,
+    response: responseLines.join('\n'),
+    type: 'info',
+    confidence: task.confidence,
+    intent,
+    action: {
+      type: 'create_task',
+      status: 'pending_approval',
+      data: {
+        title: task.title,
+        description: task.description,
+        due_date: task.due_date,
+        due_time: task.due_time,
+        priority: task.priority,
+      },
+    },
+  };
+}
+
+/**
+ * Handle event creation - extract event details and return for approval
+ */
+async function handleEventCreation(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('📅 Handling event creation:', message);
+
+  // Extract event details using AI
+  const systemPrompt = getEventExtractionSystemPrompt();
+  const userPrompt = buildEventExtractionPrompt(message);
+  const aiResponse = await callAI(systemPrompt, userPrompt);
+  const event = parseEventExtractionResponse(aiResponse);
+
+  // Calculate end time if not provided
+  const endTime = event.end_time || calculateEndTime(event.start_time);
+
+  // Format response
+  const dateObj = new Date(`${event.start_date}T${event.start_time}`);
+  const formattedDateTime = dateObj.toLocaleString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  const responseLines = [
+    `I'll schedule this event:`,
+    '',
+    `**${event.summary}**`,
+    `${formattedDateTime} - ${endTime}`,
+  ];
+
+  if (event.attendees.length > 0) {
+    responseLines.push(`With: ${event.attendees.map(a => a.name || a.email).join(', ')}`);
+  }
+
+  if (event.location) {
+    responseLines.push(`Location: ${event.location}`);
+  }
+
+  if (event.description) {
+    responseLines.push('');
+    responseLines.push(`_${event.description}_`);
+  }
+
+  return {
+    success: true,
+    response: responseLines.join('\n'),
+    type: 'info',
+    confidence: event.confidence,
+    intent,
+    action: {
+      type: 'create_event',
+      status: 'pending_approval',
+      data: {
+        summary: event.summary,
+        description: event.description,
+        start_date: event.start_date,
+        start_time: event.start_time,
+        end_time: endTime,
+        attendees: event.attendees,
+        location: event.location,
+      },
+    },
+  };
+}
+
+/**
+ * Handle general/greeting messages
+ */
+async function handleGeneral(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('💬 Handling general message:', message);
+
+  // Simple responses for common patterns
+  const lowerMessage = message.toLowerCase().trim();
+
+  if (['hi', 'hello', 'hey', 'hi!', 'hello!', 'hey!'].includes(lowerMessage)) {
+    return {
+      success: true,
+      response: "Hello! I'm your assistant. I can help you with:\n\n- **Questions about documents** - \"What did the contract say about X?\"\n- **Your agenda** - \"What's on my plate today?\"\n- **Draft emails** - \"Write a follow-up to Sarah\"\n- **Lookups** - \"When is the meeting with John?\"\n\nWhat can I help you with?",
+      type: 'general',
+      confidence: 'high',
+      intent,
+    };
+  }
+
+  if (lowerMessage.includes('help') || lowerMessage.includes('what can you do')) {
+    return {
+      success: true,
+      response: "I'm your AI assistant with access to your emails, tasks, calendar, and knowledge base. Here's what I can do:\n\n**1. Knowledge Questions**\nAsk about documents, contracts, or information in your system.\n*Example: \"What are the payment terms in the contract?\"*\n\n**2. Agenda Overview**\nGet a summary of your day, tasks, and priorities.\n*Example: \"What's on my plate today?\"*\n\n**3. Draft Communications**\nI can draft emails and follow-ups for you to review.\n*Example: \"Write a follow-up to John about the project\"*\n\n**4. Specific Lookups**\nFind specific meetings, tasks, or information.\n*Example: \"When is my meeting with Sarah?\"*",
+      type: 'general',
+      confidence: 'high',
+      intent,
+    };
+  }
+
+  // Default fallback
+  return {
+    success: true,
+    response: "I'm not quite sure what you're looking for. Could you try rephrasing? You can ask me about:\n- Documents and contracts in your knowledge base\n- Your tasks and calendar for today\n- Drafting emails or follow-ups\n- Finding specific meetings or tasks",
+    type: 'general',
+    confidence: 'low',
+    intent,
+  };
+}
+
+/**
+ * Handle email search - search emails based on extracted parameters
+ */
+async function handleEmailSearch(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('📧 Handling email search:', message);
+
+  // Build search params from intent entities
+  const searchParams: {
+    query?: string;
+    senderName?: string;
+    senderEmail?: string;
+    subject?: string;
+    dateRef?: string;
+    limit?: number;
+  } = {
+    limit: 10,
+  };
+
+  // Extract sender from person names
+  if (intent.entities.person_names.length > 0) {
+    searchParams.senderName = intent.entities.person_names[0];
+  }
+
+  // Extract topics as query terms
+  if (intent.entities.topics.length > 0) {
+    searchParams.query = intent.entities.topics.join(' ');
+  }
+
+  // Extract date references
+  if (intent.entities.dates && intent.entities.dates.length > 0) {
+    searchParams.dateRef = intent.entities.dates[0];
+  }
+
+  // If no specific params extracted, use the whole message as a query
+  if (!searchParams.senderName && !searchParams.query && !searchParams.dateRef) {
+    // Remove common words to create a search query
+    const cleanedQuery = message
+      .toLowerCase()
+      .replace(/find|search|show|get|emails?|from|about|regarding|messages?/gi, '')
+      .trim();
+    if (cleanedQuery.length > 2) {
+      searchParams.query = cleanedQuery;
+    }
+  }
+
+  // Perform the search
+  const searchContext = await searchEmailsContext(searchParams);
+
+  // Format response
+  if (searchContext.results.length === 0) {
+    const searchDescription = [];
+    if (searchParams.senderName) searchDescription.push(`from ${searchParams.senderName}`);
+    if (searchParams.query) searchDescription.push(`about "${searchParams.query}"`);
+    if (searchParams.dateRef) searchDescription.push(`from ${searchParams.dateRef}`);
+
+    return {
+      success: true,
+      response: `I couldn't find any emails${searchDescription.length > 0 ? ' ' + searchDescription.join(' ') : ''}. Try different search terms or check if the emails have been synced.`,
+      type: 'search_results',
+      confidence: 'high',
+      intent,
+      searchResults: [],
+    };
+  }
+
+  // Build summary response
+  const searchDescription = [];
+  if (searchParams.senderName) searchDescription.push(`from ${searchParams.senderName}`);
+  if (searchParams.query) searchDescription.push(`about "${searchParams.query}"`);
+  if (searchParams.dateRef) searchDescription.push(`from ${searchParams.dateRef}`);
+
+  const summaryLines = [
+    `Found ${searchContext.total} email${searchContext.total !== 1 ? 's' : ''}${searchDescription.length > 0 ? ' ' + searchDescription.join(' ') : ''}:`,
+  ];
+
+  // Add brief summary of top results
+  searchContext.results.slice(0, 3).forEach((email, idx) => {
+    const date = new Date(email.date).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+    summaryLines.push(`${idx + 1}. **${email.subject}** from ${email.sender} (${date})`);
+  });
+
+  if (searchContext.total > 3) {
+    summaryLines.push(`\n_Plus ${searchContext.total - 3} more..._`);
+  }
+
+  return {
+    success: true,
+    response: summaryLines.join('\n'),
+    type: 'search_results',
+    confidence: 'high',
+    intent,
+    searchResults: searchContext.results,
+  };
+}
+
+// ============================================
+// MAIN HANDLER
+// ============================================
+
+/**
+ * POST /api/chat
+ */
+export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
+  try {
+    const body = await request.json();
+    const { message, conversationId } = body;
+
+    // Validate input
+    if (!message || typeof message !== 'string') {
+      return NextResponse.json(
+        { success: false, error: 'Message is required' },
+        { status: 400 }
+      );
+    }
+
+    if (message.trim().length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Message cannot be empty' },
+        { status: 400 }
+      );
+    }
+
+    console.log(`💬 Chat message: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}"`);
+
+    // Step 1: Get or create conversation
+    let activeConversationId = conversationId;
+
+    if (conversationId) {
+      // Verify conversation exists
+      const existingConv = await getConversation(conversationId);
+      if (!existingConv) {
+        console.log('⚠️ Conversation not found, creating new one');
+        const newConv = await createConversation();
+        activeConversationId = newConv.id;
+      }
+    } else {
+      // Create new conversation
+      const newConv = await createConversation();
+      activeConversationId = newConv.id;
+      console.log(`📝 Created new conversation: ${activeConversationId}`);
+    }
+
+    // Step 2: Save user message
+    const userMessage = await addMessage({
+      conversation_id: activeConversationId,
+      role: 'user',
+      content: message,
+    });
+    console.log(`💾 Saved user message: ${userMessage.id}`);
+
+    // Step 3: Classify intent
+    const intent = await classifyIntent(message);
+    console.log(`🎯 Intent: ${intent.intent} (${intent.confidence})`);
+
+    // Step 4: Route to appropriate handler
+    let response: ChatResponse;
+
+    switch (intent.intent) {
+      case 'knowledge_question':
+        response = await handleKnowledgeQuestion(message, intent);
+        break;
+      case 'agenda_query':
+        response = await handleAgendaQuery(message, intent);
+        break;
+      case 'draft_generation':
+        response = await handleDraftGeneration(message, intent);
+        break;
+      case 'info_query':
+        response = await handleInfoQuery(message, intent);
+        break;
+      case 'task_creation':
+        response = await handleTaskCreation(message, intent);
+        break;
+      case 'event_creation':
+        response = await handleEventCreation(message, intent);
+        break;
+      case 'email_search':
+        response = await handleEmailSearch(message, intent);
+        break;
+      case 'general':
+      default:
+        response = await handleGeneral(message, intent);
+        break;
+    }
+
+    // Add processing time
+    response.processingMs = Date.now() - startTime;
+
+    // Step 5: Save assistant message
+    const assistantMessage = await addMessage({
+      conversation_id: activeConversationId,
+      role: 'assistant',
+      content: response.response,
+      type: response.type,
+      intent: intent.intent,
+      confidence: response.confidence,
+      citations: response.citations,
+      action: response.action ? {
+        type: response.action.type,
+        status: response.action.status,
+        data: response.action.data,
+      } : undefined,
+      search_results: response.searchResults,
+      processing_ms: response.processingMs,
+      ai_model_used: process.env.AI_PROVIDER === 'anthropic'
+        ? 'claude-3-5-sonnet-20241022'
+        : 'gpt-4o-mini',
+    });
+    console.log(`💾 Saved assistant message: ${assistantMessage.id}`);
+
+    // Add conversation and message IDs to response
+    response.conversationId = activeConversationId;
+    response.messageId = assistantMessage.id;
+
+    // Log to audit
+    await logAuditEvent({
+      entity_type: 'chat',
+      entity_id: activeConversationId,
+      action: 'message',
+      actor: 'user',
+      metadata: {
+        message: message.substring(0, 200),
+        intent: intent.intent,
+        confidence: intent.confidence,
+        response_type: response.type,
+        processing_ms: response.processingMs,
+        user_message_id: userMessage.id,
+        assistant_message_id: assistantMessage.id,
+      },
+    });
+
+    console.log(`✅ Chat response generated in ${response.processingMs}ms`);
+
+    return NextResponse.json(response);
+  } catch (error) {
+    console.error('❌ Chat error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        processingMs: Date.now() - startTime,
+      },
+      { status: 500 }
+    );
+  }
+}

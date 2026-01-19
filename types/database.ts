@@ -397,3 +397,67 @@ export type AuditLogInsert = Database['public']['Tables']['audit_log']['Insert']
 
 export type WaitingOnThread = Database['public']['Views']['waiting_on_threads']['Row']
 export type PendingApprovalsCount = Database['public']['Views']['pending_approvals_count']['Row']
+
+// ============================================
+// CONVERSATION TYPES (Loop 7 Enhancements)
+// ============================================
+
+export interface Conversation {
+  id: string
+  title: string | null
+  summary: string | null
+  message_count: number
+  first_message_at: string | null
+  last_message_at: string | null
+  is_archived: boolean
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ConversationWithPreview extends Conversation {
+  last_user_message: string | null
+}
+
+export interface ChatMessageCitation {
+  fileName: string
+  sectionTitle: string | null
+  driveUrl: string
+  sourceUrl: string | null
+  excerpt: string
+  similarity: number
+  truthPriority: string | null
+}
+
+export interface ChatMessageAction {
+  type: 'send_email' | 'create_task' | 'create_event'
+  status: 'pending_approval' | 'approved' | 'cancelled'
+  data: Record<string, unknown>
+}
+
+export interface ChatMessage {
+  id: string
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  type: string | null
+  intent: string | null
+  confidence: 'high' | 'medium' | 'low' | null
+  citations: ChatMessageCitation[] | null
+  action: ChatMessageAction | null
+  search_results: EmailSearchResult[] | null
+  sequence_number: number
+  processing_ms: number | null
+  ai_model_used: string | null
+  created_at: string
+}
+
+export interface EmailSearchResult {
+  id: string
+  subject: string
+  snippet: string
+  sender: string
+  senderEmail: string
+  date: string
+  threadId?: string
+}
