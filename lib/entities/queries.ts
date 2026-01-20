@@ -69,8 +69,11 @@ export interface EntityWithRelationships extends Entity {
 
 /**
  * Find entity by name or alias (case-insensitive)
+ * Uses a scoring system to find the best match
  */
 export async function findEntityByName(name: string): Promise<Entity | null> {
+  const normalizedQuery = name.toLowerCase().trim();
+
   // First try exact name match (case-insensitive)
   const { data: exactMatch, error: exactError } = await db
     .from('entities')
@@ -83,26 +86,63 @@ export async function findEntityByName(name: string): Promise<Entity | null> {
     return exactMatch as Entity;
   }
 
-  // Try alias match
+  // Try exact alias match
   const { data: aliasMatches, error: aliasError } = await db
     .from('entities')
     .select('*')
     .contains('aliases', [name]);
 
   if (!aliasError && aliasMatches && aliasMatches.length > 0) {
+    // If multiple alias matches, prefer exact alias match
+    const exactAliasMatch = aliasMatches.find((e: Entity) =>
+      e.aliases.some((a: string) => a.toLowerCase() === normalizedQuery)
+    );
+    if (exactAliasMatch) {
+      return exactAliasMatch as Entity;
+    }
     return aliasMatches[0] as Entity;
   }
 
-  // Try partial name match
+  // Try partial name matches - get candidates and score them
   const { data: partialMatches, error: partialError } = await db
     .from('entities')
     .select('*')
     .ilike('name', `%${name}%`)
-    .order('mention_count', { ascending: false })
-    .limit(1);
+    .limit(20); // Get more candidates to score
 
   if (!partialError && partialMatches && partialMatches.length > 0) {
-    return partialMatches[0] as Entity;
+    // Score each match - higher score = better match
+    const scored: Array<{ entity: Entity; score: number }> = partialMatches.map((entity: Entity) => {
+      const entityName = entity.name.toLowerCase();
+      let score = 0;
+
+      // Exact match (shouldn't happen here, but just in case)
+      if (entityName === normalizedQuery) {
+        score = 1000;
+      }
+      // Name starts with query (e.g., "Black Coast" matches "Black Coast Estates")
+      else if (entityName.startsWith(normalizedQuery)) {
+        score = 500 + (normalizedQuery.length / entityName.length) * 100;
+      }
+      // Query is a significant word match (e.g., "Estates" matches "Black Coast Estates")
+      else if (entityName.includes(normalizedQuery)) {
+        // Prefer when query is a larger portion of the name
+        score = 100 + (normalizedQuery.length / entityName.length) * 100;
+      }
+
+      // Bonus for higher mention count (but less important than match quality)
+      score += Math.min(entity.mention_count, 50) * 0.5;
+
+      return { entity, score };
+    });
+
+    // Sort by score descending
+    scored.sort((a, b) => b.score - a.score);
+
+    // Only return if we have a reasonable match
+    if (scored[0].score > 0) {
+      return scored[0].entity as Entity;
+    }
   }
 
   return null;
