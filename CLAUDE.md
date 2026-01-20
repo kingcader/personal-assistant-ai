@@ -493,7 +493,7 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 
 ## CURRENT STATUS
 
-**Last Updated**: January 18, 2025
+**Last Updated**: January 20, 2025
 
 - Loop 1: COMPLETE - Email → Tasks working
 - Loop 2: COMPLETE - Waiting-on detection with sent emails working
@@ -504,21 +504,10 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 - Loop 6: COMPLETE - Entity System + Chat Intelligence (People, Orgs, Relationships)
 - Loop 7: COMPLETE - Conversational Interface (Chat UI, Intent Classification, Draft Generation)
 - Loop 7.5: COMPLETE - Manual Entity Creation via Chat
-- Migration 007: NEEDS TO BE APPLIED to Supabase (requires pgvector extension)
-- Migration 009: NEEDS TO BE APPLIED for Loop 5.5 features (priority, summaries, websites)
-- Migration 011: NEEDS TO BE APPLIED for Loop 6 entity system
-- Migration 012: APPLIED for Loop 7.5 entity notes field
+- **Loop 9: IN PROGRESS - Business Context + Agent Foundation**
+- All migrations: APPLIED
+- All cron jobs: CONFIGURED
 - Deployment: LIVE at https://personal-assistant-ai-lime.vercel.app
-- Cron Jobs (cron-job.org):
-  - process-emails: every 1 min
-  - sync-threads: set up by user
-  - generate-brief (morning): 0 13 * * * (7 AM Costa Rica)
-  - generate-brief (evening): 0 2 * * * (8 PM Costa Rica)
-  - sync-calendar: every 15 min
-  - sync-drive: every 30 min (NEEDS SETUP)
-  - process-kb: every 10 min (NEEDS SETUP)
-  - crawl-websites: every 6 hours (NEEDS SETUP)
-  - sync-entities: every 30 min (NEEDS SETUP)
 
 ## CRON JOB SETUP
 
@@ -539,27 +528,114 @@ All cron jobs require `Authorization: Bearer {CRON_SECRET}` header.
 
 ## NEXT STEPS
 
-### Loop 6 Deployment (Entity System)
-1. Apply migration 011 to Supabase for entity system tables
-2. Set up sync-entities cron job on cron-job.org (every 30 min)
-3. Deploy to Vercel
-4. Test entity queries in chat: "Tell me about Jen", "Who is Sarah?"
-5. Entity data will populate as the cron job processes existing records
+### Loop 9: Business Context + Agent Foundation (CURRENT)
 
-### Loop 5.5 Deployment (RAG Improvements)
-1. Apply migration 009 to Supabase for Loop 5.5 features (priority, summaries, kb_websites table)
-2. Set up crawl-websites cron job on cron-job.org (every 6 hours)
-3. Run backfill script for existing documents: `npx tsx scripts/backfill-summaries.ts`
-4. Test answer generation at /knowledge-base (toggle to "Get Answer" mode)
-5. Test website crawling by adding a website via the Websites tab
-6. Deploy to Vercel
+**Step 1: Database Schema**
+1. Create migration 014_business_context.sql with tables:
+   - `projects` - Active projects/deals with status tracking
+   - `sops` - Standard operating procedures / playbooks
+   - `business_rules` - Constraints and preferences for the agent
+   - `decision_log` - Key decisions with rationale
+2. Apply migration to Supabase
 
-### If migration 007 not yet applied:
-1. Apply migration 007 to Supabase for Knowledge Base tables (requires pgvector extension)
-2. Re-authorize Google OAuth with drive.readonly scope (new refresh token needed)
-3. Set up sync-drive cron job on cron-job.org (every 30 min)
-4. Set up process-kb cron job on cron-job.org (every 10 min)
-5. Add first Google Drive folder via /knowledge-base page
+**Step 2: API Endpoints**
+1. `/api/projects` - CRUD for projects with status, contacts, milestones
+2. `/api/sops` - CRUD for SOPs/playbooks
+3. `/api/rules` - Business rules management
+4. `/api/decisions` - Decision log API
 
-### Future
-- Move to Loop 6 (Entity System)
+**Step 3: UI**
+1. `/projects` page - Dashboard showing all projects with status
+2. `/settings/agent` page - Configure SOPs, rules, agent behavior
+3. Project detail view with related entities, tasks, emails, decisions
+
+**Step 4: Chat Integration**
+1. Agent uses business context when responding
+2. "What's the status of Black Coast?" pulls from projects table
+3. "Remember that we decided X" logs to decision_log
+4. SOPs guide how agent drafts emails, schedules meetings, etc.
+
+## AI AGENT VISION
+
+**Goal**: Evolve from "assistant that suggests" to "agent that executes autonomously"
+
+The system should be able to:
+- "Schedule a call with Seth about the Black Coast timeline" → Check calendars, draft invite, send it
+- "Follow up with everyone who hasn't responded" → Identify recipients, draft personalized messages, send them
+- "Prepare for my meeting with Jen tomorrow" → Pull relevant docs, recent emails, create agenda with talking points
+
+### Agent Evolution Roadmap
+
+**Phase 1: Deep Business Context (IN PROGRESS)**
+Foundation for agent intelligence - the agent needs to truly understand the business before it can act.
+
+- **Projects/Deals State** - Current status, blockers, next milestones, key contacts for each
+- **SOPs/Playbooks** - "How we handle X" - teachable workflows and procedures
+- **Business Rules** - "Never schedule before 9am", "Always CC Spencer on Ocho emails"
+- **Decision Log** - Record key decisions with rationale for future context
+
+**Phase 2: Task Planning Engine**
+Break "do X" into executable steps.
+
+- **Intent → Plan decomposition** - High-level task becomes ordered steps
+- **Dependency awareness** - Know what must happen before what
+- **Tool awareness** - Know available actions (send email, create event, search docs, etc.)
+
+**Phase 3: Tiered Autonomous Execution**
+Not everything needs explicit approval.
+
+| Risk Level | Examples | Behavior |
+|------------|----------|----------|
+| Low | Search, lookup, draft creation | Auto-execute |
+| Medium | Schedule with known contacts, internal emails | Execute + notify |
+| High | External emails, financial, irreversible | Require approval |
+
+**Phase 4: Agent Loop**
+Execute → Observe → Adapt → Continue
+
+- Run a step, check the result
+- If failure, try alternative approach
+- Report back what was done
+- Learn from corrections
+
+---
+
+### Loop 9 - IN PROGRESS
+**Business Context + Agent Foundation**
+
+Phase 1 of the AI Agent evolution. Gives the system deep understanding of the business.
+
+**Database Schema:**
+- `projects` - Active projects/deals with status, description, key contacts, milestones
+- `sops` - Standard operating procedures / playbooks for common workflows
+- `business_rules` - Constraints and preferences the agent must follow
+- `decision_log` - Key decisions with rationale and date
+
+**Features:**
+- Project dashboard showing all active projects with status
+- SOP management - create/edit playbooks the AI can follow
+- Business rules configuration
+- Decision logging via chat ("Remember that we decided X because Y")
+- Chat integration - agent uses this context when planning/executing
+
+**API Endpoints:**
+- `/api/projects` - CRUD for projects
+- `/api/sops` - CRUD for SOPs/playbooks
+- `/api/rules` - Business rules management
+- `/api/decisions` - Decision log
+
+**UI Pages:**
+- `/projects` - Project dashboard and management
+- `/settings/agent` - Configure SOPs, rules, and agent behavior
+
+### Loop 10 - PLANNED
+**Task Planning + Execution Engine**
+Phase 2 of AI Agent - break down intents into executable plans.
+
+### Loop 11 - PLANNED
+**Autonomous Execution + Agent Loop**
+Phase 3-4 of AI Agent - tiered execution and observe/adapt loop.
+
+### Loop 12 - PLANNED
+**Current Truth Page**
+Structured source-of-truth: agreements, pricing, policies, templates with explicit approval for updates.
