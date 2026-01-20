@@ -80,6 +80,9 @@ export default function CalendarPage() {
   const [loadingPrep, setLoadingPrep] = useState(false);
   const [regeneratingPrep, setRegeneratingPrep] = useState(false);
 
+  // Task detail modal
+  const [selectedTask, setSelectedTask] = useState<CalendarTask | null>(null);
+
   // Sidebar visibility
   const [showSidebar, setShowSidebar] = useState(true);
 
@@ -400,6 +403,12 @@ export default function CalendarPage() {
     taskId: string,
     dayKey: string
   ) => {
+    if (!taskId) {
+      console.error('[handleScheduleAllDayTask] No taskId provided');
+      showToast('Unable to schedule: missing task ID', 'error');
+      return;
+    }
+
     try {
       console.log('[handleScheduleAllDayTask] Scheduling all-day task:', {
         taskId,
@@ -422,22 +431,32 @@ export default function CalendarPage() {
           status: response.status,
           error: data.error,
           taskId,
+          dayKey,
         });
         throw new Error(data.error || 'Failed to schedule task');
       }
 
       console.log('[handleScheduleAllDayTask] Success:', data);
 
-      // Remove from unscheduled tasks
+      // Remove from unscheduled tasks (if it was there)
       setUnscheduledTasks((prev) => prev.filter((t) => t.id !== taskId));
 
-      // Reload calendar data to show the scheduled task
-      loadCalendarData();
-      showToast('Task scheduled as all-day', 'success');
+      // Update local tasks state immediately for faster UI
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, is_scheduled: true, is_all_day: true, scheduled_start: dayKey + 'T00:00:00', scheduled_end: null }
+            : t
+        )
+      );
+
+      showToast('Task moved', 'success');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to schedule task';
       console.error('[handleScheduleAllDayTask] Error:', err);
       showToast(errorMessage, 'error');
+      // Reload to restore correct state on error
+      loadCalendarData();
     }
   }, [showToast, loadCalendarData]);
 
@@ -455,13 +474,29 @@ export default function CalendarPage() {
     const activeData = active.data.current;
     const overData = over.data.current;
 
+    console.log('[handleDragEnd] Drag ended:', {
+      activeId: active.id,
+      activeType: activeData?.type,
+      activeTaskId: activeData?.task?.id,
+      activeEventId: activeData?.event?.id,
+      overId: over.id,
+      overType: overData?.type,
+    });
+
     // Get task ID from either sidebar (task) or WeekGrid (event) data structure
-    const getTaskId = () => activeData?.task?.id || activeData?.event?.id;
+    const getTaskId = () => {
+      const taskId = activeData?.task?.id || activeData?.event?.id;
+      console.log('[handleDragEnd] Extracted taskId:', taskId);
+      return taskId;
+    };
 
     // Dropping a task on a time slot
     if (activeData?.type === 'task' && overData?.type === 'time-slot') {
       const taskId = getTaskId();
-      if (!taskId) return;
+      if (!taskId) {
+        console.error('[handleDragEnd] No task ID found for time-slot drop');
+        return;
+      }
       const { dayKey, hour } = overData;
       handleScheduleTask(taskId, dayKey, hour);
     }
@@ -469,7 +504,10 @@ export default function CalendarPage() {
     // Dropping a task on an all-day slot
     if (activeData?.type === 'task' && overData?.type === 'all-day-slot') {
       const taskId = getTaskId();
-      if (!taskId) return;
+      if (!taskId) {
+        console.error('[handleDragEnd] No task ID found for all-day-slot drop');
+        return;
+      }
       const { dayKey } = overData;
       handleScheduleAllDayTask(taskId, dayKey);
     }
@@ -710,8 +748,14 @@ export default function CalendarPage() {
   const handleWeekGridEventClick = useCallback((event: WeekGridEvent) => {
     if (event.type === 'event') {
       handleViewPrep(event.id);
+    } else if (event.type === 'task') {
+      // Find the task from our tasks array
+      const task = tasks.find(t => t.id === event.id);
+      if (task) {
+        setSelectedTask(task);
+      }
     }
-  }, [handleViewPrep]);
+  }, [handleViewPrep, tasks]);
 
   const handleCreated = useCallback(() => {
     loadCalendarData();
@@ -962,6 +1006,122 @@ export default function CalendarPage() {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Task Detail Modal */}
+        {selectedTask && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="card-ios max-w-md w-full p-6">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-semibold">{selectedTask.title}</h2>
+                  {selectedTask.email_subject && (
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      From: {selectedTask.email_subject}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSelectedTask(null)}
+                  className="p-2 -mr-2 -mt-2 rounded-xl hover:bg-muted"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {selectedTask.description && (
+                <p className="text-sm text-muted-foreground mb-4">{selectedTask.description}</p>
+              )}
+
+              <div className="space-y-2 text-sm mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground w-20">Priority:</span>
+                  <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${
+                    selectedTask.priority === 'high' ? 'bg-destructive/10 text-destructive' :
+                    selectedTask.priority === 'med' ? 'bg-amber-500/10 text-amber-600' :
+                    'bg-primary/10 text-primary'
+                  }`}>
+                    {selectedTask.priority === 'high' ? 'High' : selectedTask.priority === 'med' ? 'Medium' : 'Low'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground w-20">Status:</span>
+                  <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${
+                    selectedTask.status === 'completed' ? 'bg-success/10 text-success' :
+                    selectedTask.status === 'in_progress' ? 'bg-primary/10 text-primary' :
+                    'bg-muted text-muted-foreground'
+                  }`}>
+                    {selectedTask.status === 'in_progress' ? 'In Progress' :
+                     selectedTask.status.charAt(0).toUpperCase() + selectedTask.status.slice(1)}
+                  </span>
+                </div>
+                {selectedTask.due_date && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground w-20">Due:</span>
+                    <span>{new Date(selectedTask.due_date + 'T12:00:00').toLocaleDateString('en-US', {
+                      weekday: 'short', month: 'short', day: 'numeric'
+                    })}</span>
+                  </div>
+                )}
+                {selectedTask.is_scheduled && selectedTask.scheduled_start && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground w-20">Scheduled:</span>
+                    <span>
+                      {selectedTask.is_all_day
+                        ? new Date(selectedTask.scheduled_start).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                        : new Date(selectedTask.scheduled_start).toLocaleString('en-US', {
+                            weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                          })
+                      }
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t">
+                {selectedTask.status !== 'completed' && (
+                  <>
+                    <button
+                      onClick={() => {
+                        handleTaskComplete(selectedTask.id);
+                        setSelectedTask(null);
+                      }}
+                      disabled={processingIds.has(selectedTask.id)}
+                      className="flex-1 text-sm px-4 py-2 rounded-xl font-medium bg-success text-success-foreground active:scale-[0.97]"
+                    >
+                      Complete
+                    </button>
+                    {selectedTask.status === 'todo' && (
+                      <button
+                        onClick={() => {
+                          handleTaskStart(selectedTask.id);
+                          setSelectedTask(null);
+                        }}
+                        disabled={processingIds.has(selectedTask.id)}
+                        className="flex-1 btn-ios-primary text-sm"
+                      >
+                        Start
+                      </button>
+                    )}
+                  </>
+                )}
+                {selectedTask.is_scheduled && (
+                  <button
+                    onClick={() => {
+                      handleUnscheduleTask(selectedTask.id);
+                      setSelectedTask(null);
+                    }}
+                    disabled={processingIds.has(selectedTask.id)}
+                    className="flex-1 btn-ios-secondary text-sm"
+                  >
+                    Unschedule
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

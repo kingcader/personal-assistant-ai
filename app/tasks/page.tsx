@@ -199,7 +199,7 @@ export default function TasksPage() {
   function getPriorityColor(priority: string) {
     switch (priority) {
       case 'high': return 'bg-destructive';
-      case 'med': return 'bg-warning';
+      case 'med': return 'bg-amber-500'; // More visible than warning
       case 'low': return 'bg-primary';
       default: return 'bg-muted-foreground';
     }
@@ -356,7 +356,7 @@ export default function TasksPage() {
                                 <span className="font-medium">Priority:</span>{' '}
                                 <span className={
                                   task.priority === 'high' ? 'text-destructive' :
-                                  task.priority === 'med' ? 'text-warning' : 'text-primary'
+                                  task.priority === 'med' ? 'text-amber-600' : 'text-primary'
                                 }>
                                   {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
                                 </span>
