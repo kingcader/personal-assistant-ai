@@ -286,11 +286,14 @@ Allows users to teach the system about people/organizations through natural conv
 - Call transcripts, meeting notes, logs
 - Automatic categorization and tagging
 
-### Loop 9 - PLANNED
-**Business Intelligence (Focus/Priorities)**
-- Current focus tracking
-- Priority-based workflows
-- Weekly/monthly reflection on patterns, delays, risks
+### Loop 9 - COMPLETED
+**Business Context + Agent Foundation**
+- Project management with status tracking, blockers, next steps, milestones
+- SOP (Standard Operating Procedure) system for teachable workflows
+- Business rules engine with constraints, preferences, requirements
+- Decision logging via chat with rationale tracking
+- Chat integration: project queries ("What's the status of X?") and decision logging ("Remember that we decided Y")
+- SOPs guide draft generation for consistent email patterns
 
 ### Loop 10 - PLANNED
 **Current Truth Page**
@@ -504,7 +507,7 @@ VAPID_SUBJECT=mailto:kincaidgarrett@gmail.com
 - Loop 6: COMPLETE - Entity System + Chat Intelligence (People, Orgs, Relationships)
 - Loop 7: COMPLETE - Conversational Interface (Chat UI, Intent Classification, Draft Generation)
 - Loop 7.5: COMPLETE - Manual Entity Creation via Chat
-- **Loop 9: IN PROGRESS - Business Context + Agent Foundation**
+- Loop 9: COMPLETE - Business Context + Agent Foundation (Projects, SOPs, Rules, Decision Log, Chat Integration)
 - All migrations: APPLIED
 - All cron jobs: CONFIGURED
 - Deployment: LIVE at https://personal-assistant-ai-lime.vercel.app
@@ -528,32 +531,29 @@ All cron jobs require `Authorization: Bearer {CRON_SECRET}` header.
 
 ## NEXT STEPS
 
-### Loop 9: Business Context + Agent Foundation (CURRENT)
+### Loop 10: Task Planning Engine (NEXT)
 
-**Step 1: Database Schema**
-1. Create migration 014_business_context.sql with tables:
-   - `projects` - Active projects/deals with status tracking
-   - `sops` - Standard operating procedures / playbooks
-   - `business_rules` - Constraints and preferences for the agent
-   - `decision_log` - Key decisions with rationale
-2. Apply migration to Supabase
+Phase 2 of the AI Agent evolution. Break "do X" into executable steps.
 
-**Step 2: API Endpoints**
-1. `/api/projects` - CRUD for projects with status, contacts, milestones
-2. `/api/sops` - CRUD for SOPs/playbooks
-3. `/api/rules` - Business rules management
-4. `/api/decisions` - Decision log API
+**Step 1: Plan Decomposition**
+1. Create `action_plans` table to store multi-step plans
+2. AI decomposes high-level requests into ordered steps
+3. Each step has: action_type, parameters, dependencies, status
 
-**Step 3: UI**
-1. `/projects` page - Dashboard showing all projects with status
-2. `/settings/agent` page - Configure SOPs, rules, agent behavior
-3. Project detail view with related entities, tasks, emails, decisions
+**Step 2: Tool Registry**
+1. Register available actions the agent can take
+2. Action types: send_email, create_task, create_event, search_kb, lookup_entity, etc.
+3. Each action has required parameters and validation
 
-**Step 4: Chat Integration**
-1. Agent uses business context when responding
-2. "What's the status of Black Coast?" pulls from projects table
-3. "Remember that we decided X" logs to decision_log
-4. SOPs guide how agent drafts emails, schedules meetings, etc.
+**Step 3: Plan Execution UI**
+1. Show proposed plan before execution
+2. Allow user to modify/approve/reject individual steps
+3. Track execution progress with real-time updates
+
+**Step 4: Dependency Resolution**
+1. Handle sequential dependencies (step 2 needs result of step 1)
+2. Parallel execution where possible
+3. Rollback handling for failed steps
 
 ## AI AGENT VISION
 
@@ -600,32 +600,44 @@ Execute → Observe → Adapt → Continue
 
 ---
 
-### Loop 9 - IN PROGRESS
+### Loop 9 - COMPLETED
 **Business Context + Agent Foundation**
 
 Phase 1 of the AI Agent evolution. Gives the system deep understanding of the business.
 
-**Database Schema:**
+**Database Schema (014_business_context.sql):**
 - `projects` - Active projects/deals with status, description, key contacts, milestones
 - `sops` - Standard operating procedures / playbooks for common workflows
 - `business_rules` - Constraints and preferences the agent must follow
 - `decision_log` - Key decisions with rationale and date
+- `project_activity` - Activity log for project changes
 
 **Features:**
 - Project dashboard showing all active projects with status
+- Project detail modal with editable blockers and next steps
 - SOP management - create/edit playbooks the AI can follow
-- Business rules configuration
+- Business rules configuration with constraint/preference/requirement types
 - Decision logging via chat ("Remember that we decided X because Y")
 - Chat integration - agent uses this context when planning/executing
+- Project queries in chat: "What's the status of Black Coast?"
+- Decision logging in chat: "Remember that we decided to postpone"
+- SOPs guide draft generation for consistent email patterns
 
 **API Endpoints:**
-- `/api/projects` - CRUD for projects
+- `/api/projects` - CRUD for projects with activity tracking
+- `/api/projects/[id]/activity` - Project activity log
 - `/api/sops` - CRUD for SOPs/playbooks
 - `/api/rules` - Business rules management
 - `/api/decisions` - Decision log
+- `/api/context` - Full business context for agent
 
 **UI Pages:**
 - `/projects` - Project dashboard and management
+- `/settings/agent` - SOPs and business rules configuration
+
+**Chat Intents Added:**
+- `project_query` - Questions about project status, blockers, next steps
+- `decision_log` - Record decisions with rationale
 - `/settings/agent` - Configure SOPs, rules, and agent behavior
 
 ### Loop 10 - PLANNED
