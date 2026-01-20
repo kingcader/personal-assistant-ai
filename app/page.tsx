@@ -1,6 +1,34 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from "next/link";
+import { getPendingApprovalsCount } from '@/lib/supabase/audit-queries';
+import type { PendingApprovalsCount } from '@/types/database';
 
 export default function Home() {
+  const [counts, setCounts] = useState<PendingApprovalsCount | null>(null);
+  const [waitingOnCount, setWaitingOnCount] = useState<number>(0);
+
+  useEffect(() => {
+    async function loadCounts() {
+      try {
+        // Fetch pending approvals count
+        const approvalsCount = await getPendingApprovalsCount();
+        setCounts(approvalsCount);
+
+        // Fetch waiting-on threads count
+        const response = await fetch('/api/threads?status=waiting');
+        const data = await response.json();
+        if (data.success) {
+          setWaitingOnCount(data.threads?.length || 0);
+        }
+      } catch (error) {
+        console.error('Error loading counts:', error);
+      }
+    }
+    loadCounts();
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-3xl mx-auto px-4 py-8">
@@ -35,8 +63,13 @@ export default function Home() {
 
           <Link
             href="/review"
-            className="flex items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
+            className="relative flex items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
           >
+            {counts && counts.total > 0 && (
+              <span className="absolute -top-2 -right-2 min-w-5 h-5 flex items-center justify-center px-1.5 text-xs font-bold bg-red-500 text-white rounded-full">
+                {counts.total}
+              </span>
+            )}
             <div className="w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0">
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -89,8 +122,13 @@ export default function Home() {
 
           <Link
             href="/waiting-on"
-            className="flex items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
+            className="relative flex items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
           >
+            {waitingOnCount > 0 && (
+              <span className="absolute -top-2 -right-2 min-w-5 h-5 flex items-center justify-center px-1.5 text-xs font-bold bg-yellow-500 text-white rounded-full">
+                {waitingOnCount}
+              </span>
+            )}
             <div className="w-10 h-10 rounded-full bg-yellow-500 flex items-center justify-center flex-shrink-0">
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -135,6 +173,24 @@ export default function Home() {
             <div className="flex-1">
               <div className="font-medium text-gray-900">Knowledge Base</div>
               <div className="text-sm text-gray-500">Search documents and get AI answers</div>
+            </div>
+            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+
+          <Link
+            href="/projects"
+            className="flex items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
+          >
+            <div className="w-10 h-10 rounded-full bg-orange-600 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="font-medium text-gray-900">Projects</div>
+              <div className="text-sm text-gray-500">Track deals, milestones, and blockers</div>
             </div>
             <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

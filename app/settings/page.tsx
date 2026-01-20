@@ -332,6 +332,24 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Agent Configuration */}
+        <Link
+          href="/settings/agent"
+          className="block bg-card border border-border rounded-lg p-6 mb-6 hover:border-gray-400 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold mb-2">Agent Configuration</h2>
+              <p className="text-sm text-muted-foreground">
+                Configure business rules and SOPs that teach the AI how to work
+              </p>
+            </div>
+            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </Link>
+
         {/* Notification Frequency Info */}
         <div className="bg-card border border-border rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4">Notification Frequency</h2>
