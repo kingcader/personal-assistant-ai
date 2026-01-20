@@ -17,6 +17,7 @@ export interface WeekGridEvent {
   meetingLink?: string;
   reason?: string;
   isScheduled?: boolean;
+  hasDueDate?: boolean; // Task has due_date but not scheduled
 }
 
 interface WeekGridProps {
@@ -343,10 +344,11 @@ export default function WeekGrid({
               const allDayItems = getAllDayItems(dayKey);
               const todayFlag = isToday(day);
 
-              // Render all-day items - use draggable for scheduled tasks when drag-drop enabled
+              // Render all-day items - use draggable for tasks when drag-drop enabled
               const itemsContent = allDayItems.map((item) => {
-                // Only scheduled tasks should be draggable (not events from Google Calendar)
-                const canDrag = enableDragDrop && item.type === 'task' && item.isScheduled;
+                // Tasks are draggable if scheduled OR if they have a due date
+                // Events from Google Calendar are not draggable
+                const canDrag = enableDragDrop && item.type === 'task' && (item.isScheduled || item.hasDueDate);
 
                 if (enableDragDrop && item.type === 'task') {
                   return (

@@ -460,6 +460,54 @@ export default function CalendarPage() {
     }
   }, [showToast, loadCalendarData]);
 
+  // Update due date for unscheduled tasks
+  const handleUpdateDueDate = useCallback(async (
+    taskId: string,
+    newDueDate: string // YYYY-MM-DD format
+  ) => {
+    if (!taskId) {
+      console.error('[handleUpdateDueDate] No taskId provided');
+      return;
+    }
+
+    try {
+      console.log('[handleUpdateDueDate] Updating due date:', { taskId, newDueDate });
+
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ due_date: newDueDate }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('[handleUpdateDueDate] API error:', {
+          status: response.status,
+          error: data.error,
+          taskId,
+        });
+        throw new Error(data.error || 'Failed to update due date');
+      }
+
+      console.log('[handleUpdateDueDate] Success:', data);
+
+      // Update local tasks state immediately for faster UI
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId ? { ...t, due_date: newDueDate } : t
+        )
+      );
+
+      showToast('Due date updated', 'success');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update due date';
+      console.error('[handleUpdateDueDate] Error:', err);
+      showToast(errorMessage, 'error');
+      loadCalendarData();
+    }
+  }, [showToast, loadCalendarData]);
+
   // Drag handlers
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveDragItem(event.active.data.current);
@@ -509,9 +557,29 @@ export default function CalendarPage() {
         return;
       }
       const { dayKey } = overData;
-      handleScheduleAllDayTask(taskId, dayKey);
+
+      // Check if this is a due-date-only task (not scheduled)
+      // If so, update the due_date; otherwise schedule as all-day
+      const eventData = activeData?.event;
+      const isDueDateTask = eventData?.hasDueDate && !eventData?.isScheduled;
+
+      console.log('[handleDragEnd] All-day drop:', {
+        taskId,
+        dayKey,
+        isDueDateTask,
+        hasDueDate: eventData?.hasDueDate,
+        isScheduled: eventData?.isScheduled,
+      });
+
+      if (isDueDateTask) {
+        // Update due date instead of scheduling
+        handleUpdateDueDate(taskId, dayKey);
+      } else {
+        // Schedule as all-day task
+        handleScheduleAllDayTask(taskId, dayKey);
+      }
     }
-  }, [handleScheduleTask, handleScheduleAllDayTask]);
+  }, [handleScheduleTask, handleScheduleAllDayTask, handleUpdateDueDate]);
 
   // Build calendar days
   const buildCalendarDays = useCallback(() => {
@@ -694,7 +762,7 @@ export default function CalendarPage() {
               isScheduled: true,
             });
           } else if (task.due_date) {
-            // Unscheduled task with due date
+            // Unscheduled task with due date - can be dragged to change due date
             const taskDate = new Date(task.due_date + 'T09:00:00');
             weekEvents.push({
               id: task.id,
@@ -705,6 +773,7 @@ export default function CalendarPage() {
               priority: task.priority,
               status: task.status,
               isScheduled: false,
+              hasDueDate: true,
             });
           }
         });
