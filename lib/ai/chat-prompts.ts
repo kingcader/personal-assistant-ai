@@ -39,13 +39,32 @@ export const INTENT_CLASSIFIER_PROMPT = `You are an intent classifier for a pers
 8. **summarization** - Requests for summaries, digests, or overviews of the day/week/tasks
    - Examples: "Summarize my day", "Give me a recap", "What's the overview?", "Brief me on today"
 
-9. **entity_update** - User is providing information about a person, organization, or project to remember
-   - "X is the Y" / "X works at Y" / "X is from Y"
-   - "Remember that X..." / "Save X as..."
-   - Adding context about people/orgs
+9. **entity_update** - User is TEACHING you information about a person, organization, or project to remember
+   - MUST have a declarative statement pattern: "X is [role/description]" / "X works at Y" / "X is from Y"
+   - Or explicit save commands: "Remember that X..." / "Save X as..." / "Note that X..."
    - Examples: "Jen Dalton is the real estate agent at Dalton Group", "Mark is our accountant", "Remember that Sarah handles the Costa Rica deal"
+   - NOT entity_update if asking a question (use entity_query instead)
 
-10. **general** - General conversation, greetings, or questions that don't fit other categories
+10. **entity_query** - User is ASKING about a person, organization, or project they've previously told you about
+   - Question patterns: "Who is X?", "What do you know about X?", "Tell me about X"
+   - Name-only queries: Just a person's name like "Jen Dalton" or "Jen" (asking for info)
+   - Follow-up questions: "What about her?", "And him?"
+   - Examples: "Who is Jen Dalton?", "Tell me about Sarah", "What do you know about Acme Corp?", "Jen Dalton" (standalone name)
+   - Use this when the user wants to RETRIEVE saved entity information
+
+11. **project_query** - Questions about specific business projects, deals, or their status
+   - Examples: "What's the status of Black Coast?", "How is the Costa Rica deal going?", "What are the blockers on Project Alpha?"
+   - Project names are specific named initiatives, deals, or business efforts
+   - Use this when asking about project STATUS, BLOCKERS, NEXT STEPS, MILESTONES, or DECISIONS
+   - NOT for general entities - use entity_query for people/organizations
+
+12. **decision_log** - User wants to RECORD a decision or remember something important
+   - Explicit recording: "Remember that we decided...", "Log that...", "Record that..."
+   - Decision statements: "We decided to X", "The decision was made to X", "Going forward we'll X"
+   - Examples: "Remember that we decided to postpone the launch", "Log that we're using vendor A instead of B", "Record that the budget was approved at $50k"
+   - NOT for asking about past decisions (use knowledge_question) - this is for CREATING new decision records
+
+13. **general** - General conversation, greetings, or questions that don't fit other categories
    - Examples: "Hello", "How are you?", "What can you help me with?"
 
 ## CONVERSATION CONTEXT
@@ -65,7 +84,7 @@ Examples with context:
 
 Return a JSON object with this exact structure:
 {
-  "intent": "knowledge_question" | "agenda_query" | "draft_generation" | "info_query" | "task_creation" | "event_creation" | "email_search" | "summarization" | "entity_update" | "general",
+  "intent": "knowledge_question" | "agenda_query" | "draft_generation" | "info_query" | "task_creation" | "event_creation" | "email_search" | "summarization" | "entity_update" | "entity_query" | "project_query" | "decision_log" | "general",
   "confidence": "high" | "medium" | "low",
   "entities": {
     "person_names": ["name1", "name2"],
@@ -76,12 +95,36 @@ Return a JSON object with this exact structure:
   "reasoning": "Brief explanation of why this intent was chosen"
 }
 
+## CRITICAL: ENTITY NAME EXTRACTION
+
+ALWAYS extract person_names and organization_names when they appear in the message, regardless of intent:
+- "Who is Jen Dalton?" → person_names: ["Jen Dalton"]
+- "Jen Dalton is the realtor" → person_names: ["Jen Dalton"]
+- "Tell me about Sarah" → person_names: ["Sarah"]
+- "Jen" (standalone) → person_names: ["Jen"]
+
+For entity_query and entity_update intents, person_names MUST be populated.
+
+## DISTINGUISHING ENTITY_UPDATE VS ENTITY_QUERY
+
+- **entity_update**: User is TELLING you something new. Look for: "is", "works at", "remember that", declarative statements
+  - "Jen Dalton is the realtor" → entity_update
+  - "Sarah works at Acme" → entity_update
+  - "Remember that Mark handles accounting" → entity_update
+
+- **entity_query**: User is ASKING about someone. Look for: "who is", "what about", "tell me about", question marks, standalone names
+  - "Who is Jen Dalton?" → entity_query
+  - "Tell me about Sarah" → entity_query
+  - "Jen Dalton" (just a name) → entity_query (they want info)
+  - "What do you know about Mark?" → entity_query
+
 ## GUIDELINES
 
 - If the message is ambiguous, choose the most likely intent
 - Extract any person names, topics, or time references mentioned
 - For draft requests, identify what type of communication is needed
-- Be conservative with confidence - use "low" if genuinely unsure`;
+- Be conservative with confidence - use "low" if genuinely unsure
+- When a message is just a name (e.g., "Jen Dalton"), treat it as entity_query - the user wants to know about that person`;
 
 /**
  * Agenda Synthesis Prompt
@@ -202,7 +245,7 @@ Return a JSON object with this structure:
  * Parse intent classification response
  */
 export interface IntentClassification {
-  intent: 'knowledge_question' | 'agenda_query' | 'draft_generation' | 'info_query' | 'task_creation' | 'event_creation' | 'email_search' | 'summarization' | 'entity_update' | 'general';
+  intent: 'knowledge_question' | 'agenda_query' | 'draft_generation' | 'info_query' | 'task_creation' | 'event_creation' | 'email_search' | 'summarization' | 'entity_update' | 'entity_query' | 'project_query' | 'decision_log' | 'general';
   confidence: 'high' | 'medium' | 'low';
   entities: {
     person_names: string[];
@@ -210,6 +253,7 @@ export interface IntentClassification {
     time_reference: string | null;
     action_type: 'email' | 'message' | 'follow_up' | null;
     dates: string[];
+    project_names: string[];
   };
   reasoning: string;
 }
@@ -224,6 +268,9 @@ const VALID_INTENTS = [
   'email_search',
   'summarization',
   'entity_update',
+  'entity_query',
+  'project_query',
+  'decision_log',
   'general',
 ];
 
@@ -249,6 +296,7 @@ export function parseIntentResponse(response: string): IntentClassification {
         time_reference: parsed.entities?.time_reference || null,
         action_type: parsed.entities?.action_type || null,
         dates: Array.isArray(parsed.entities?.dates) ? parsed.entities.dates : [],
+        project_names: Array.isArray(parsed.entities?.project_names) ? parsed.entities.project_names : [],
       },
       reasoning: parsed.reasoning || '',
     };
@@ -256,7 +304,7 @@ export function parseIntentResponse(response: string): IntentClassification {
     return {
       intent: 'general',
       confidence: 'low',
-      entities: { person_names: [], topics: [], time_reference: null, action_type: null, dates: [] },
+      entities: { person_names: [], topics: [], time_reference: null, action_type: null, dates: [], project_names: [] },
       reasoning: 'Failed to parse intent',
     };
   }
@@ -439,7 +487,7 @@ export function parseInfoResponse(response: string): InfoQueryResponse {
  * Entity Query Prompt
  * Generates responses about specific entities using their context
  */
-export const ENTITY_QUERY_PROMPT = `You are a business-aware personal assistant. You have comprehensive knowledge about the user's contacts, organizations, and projects.
+export const ENTITY_QUERY_PROMPT = `You are a business-aware personal assistant for Kincaid Garrett (email: kincaidgarrett@gmail.com). You have comprehensive knowledge about Kincaid's contacts, organizations, and projects.
 
 ## CONTEXT FORMAT
 
@@ -483,7 +531,7 @@ Return a JSON object:
  * Intelligent Assistant System Prompt
  * Enhanced prompt that leverages entity context for smarter responses
  */
-export const INTELLIGENT_ASSISTANT_PROMPT = `You are an expert personal assistant who deeply understands the user's business relationships and context.
+export const INTELLIGENT_ASSISTANT_PROMPT = `You are an expert personal assistant for Kincaid Garrett (email: kincaidgarrett@gmail.com). You deeply understand Kincaid's business relationships and context.
 
 ## WHAT YOU KNOW
 
@@ -558,4 +606,219 @@ export function parseEntityQueryResponse(response: string): EntityQueryResponse 
       confidence: 'low',
     };
   }
+}
+
+// ============================================
+// PROJECT QUERY PROMPTS (Loop 9)
+// ============================================
+
+/**
+ * Project Query Prompt
+ * Generates responses about specific projects using their context
+ */
+export const PROJECT_QUERY_PROMPT = `You are a business-aware personal assistant for Kincaid Garrett. You have comprehensive knowledge about his active projects and deals.
+
+## CONTEXT FORMAT
+
+You'll receive project context including:
+- **Project Details**: Name, status, description, start date, target completion
+- **Current Blockers**: Issues preventing progress
+- **Next Steps**: Planned actions
+- **Milestones**: Key milestones and their status
+- **Key Contacts**: People involved in the project
+- **Related Tasks**: Active tasks related to this project
+- **Recent Activity**: Recent updates and changes
+- **Key Decisions**: Important decisions made about this project
+
+## RESPONSE GUIDELINES
+
+1. **Lead with status**: Start with a clear status update
+   - "Black Coast is currently ACTIVE with 2 blockers..."
+
+2. **Highlight blockers**: If there are blockers, make them prominent
+   - "The main blockers are: (1) waiting on permits, (2) budget approval"
+
+3. **Surface next steps**: What needs to happen next
+   - "Next steps are to finalize the contract and schedule the kickoff call"
+
+4. **Mention key people**: Reference key contacts when relevant
+   - "Jen is handling the contract negotiations..."
+
+5. **Connect to tasks**: If there are related tasks, mention them
+   - "There's a task due tomorrow to review the proposal"
+
+6. **Reference decisions**: If relevant decisions were made, cite them
+   - "We decided last week to postpone Phase 2 until Q2"
+
+## RESPONSE FORMAT
+
+Return a JSON object:
+{
+  "status_summary": "Quick status overview (1 sentence)",
+  "details": "More detailed explanation with context",
+  "blockers": ["Blocker 1", "Blocker 2"],
+  "next_steps": ["Next step 1", "Next step 2"],
+  "key_contacts": ["Contact 1", "Contact 2"],
+  "pending_tasks": ["Related task 1", "Related task 2"],
+  "suggested_actions": ["Possible action 1", "Possible action 2"],
+  "confidence": "high" | "medium" | "low"
+}
+
+## TONE
+
+- Direct and business-focused
+- Lead with the most important information
+- Be actionable - what does the user need to know or do?`;
+
+/**
+ * Parse project query response
+ */
+export interface ProjectQueryResponse {
+  status_summary: string;
+  details: string;
+  blockers: string[];
+  next_steps: string[];
+  key_contacts: string[];
+  pending_tasks: string[];
+  suggested_actions: string[];
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export function parseProjectQueryResponse(response: string): ProjectQueryResponse {
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    return {
+      status_summary: parsed.status_summary || 'Unable to determine status',
+      details: parsed.details || '',
+      blockers: parsed.blockers || [],
+      next_steps: parsed.next_steps || [],
+      key_contacts: parsed.key_contacts || [],
+      pending_tasks: parsed.pending_tasks || [],
+      suggested_actions: parsed.suggested_actions || [],
+      confidence: ['high', 'medium', 'low'].includes(parsed.confidence)
+        ? parsed.confidence
+        : 'low',
+    };
+  } catch {
+    return {
+      status_summary: 'Unable to process project query',
+      details: '',
+      blockers: [],
+      next_steps: [],
+      key_contacts: [],
+      pending_tasks: [],
+      suggested_actions: [],
+      confidence: 'low',
+    };
+  }
+}
+
+// ============================================
+// DECISION LOG PROMPTS (Loop 9)
+// ============================================
+
+/**
+ * Decision Extraction Prompt
+ * Extracts decision details from user statements
+ */
+export const DECISION_EXTRACTION_PROMPT = `You are extracting decision information from a user statement. The user wants to record a business decision.
+
+## EXTRACT THE FOLLOWING
+
+1. **Decision**: What was decided (clear, actionable statement)
+2. **Rationale**: Why this decision was made (if mentioned)
+3. **Context**: Background or circumstances (if mentioned)
+4. **Project**: Related project name (if mentioned)
+5. **People**: People involved in or affected by the decision
+
+## RESPONSE FORMAT
+
+Return a JSON object:
+{
+  "decision": "Clear statement of what was decided",
+  "rationale": "Why this decision was made (or null)",
+  "context": "Background information (or null)",
+  "project_name": "Related project name (or null)",
+  "people_involved": ["Person 1", "Person 2"],
+  "confidence": "high" | "medium" | "low"
+}
+
+## GUIDELINES
+
+- The decision should be a clear, standalone statement
+- Capture the essence of the decision even if phrasing is informal
+- If rationale isn't explicit, leave it null
+- Extract project names if they're mentioned (like "Black Coast deal", "Costa Rica project")
+- Extract any people mentioned as involved`;
+
+/**
+ * Parse decision extraction response
+ */
+export interface DecisionExtractionResponse {
+  decision: string;
+  rationale: string | null;
+  context: string | null;
+  project_name: string | null;
+  people_involved: string[];
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export function parseDecisionExtractionResponse(response: string): DecisionExtractionResponse {
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    return {
+      decision: parsed.decision || '',
+      rationale: parsed.rationale || null,
+      context: parsed.context || null,
+      project_name: parsed.project_name || null,
+      people_involved: parsed.people_involved || [],
+      confidence: ['high', 'medium', 'low'].includes(parsed.confidence)
+        ? parsed.confidence
+        : 'low',
+    };
+  } catch {
+    return {
+      decision: '',
+      rationale: null,
+      context: null,
+      project_name: null,
+      people_involved: [],
+      confidence: 'low',
+    };
+  }
+}
+
+// ============================================
+// ENHANCED DRAFT GENERATION WITH SOPS (Loop 9)
+// ============================================
+
+/**
+ * Build draft generation prompt with SOPs
+ * Enhances the base draft prompt with relevant SOPs
+ */
+export function buildDraftPromptWithSops(
+  basePrompt: string,
+  sopContext: string
+): string {
+  if (!sopContext) {
+    return basePrompt;
+  }
+
+  return `${basePrompt}
+
+${sopContext}
+
+IMPORTANT: Follow the Standard Operating Procedures above when drafting this communication.`;
 }

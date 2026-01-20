@@ -27,6 +27,21 @@ import {
   EntityMention,
 } from '@/lib/entities/queries';
 import type { RelationshipType } from '@/lib/entities/extractor';
+import {
+  getProjectByName,
+  getActiveProjects,
+  getProjectActivity,
+  getDecisions,
+  getSops,
+  getBusinessRules,
+  getFullBusinessContext,
+  searchDecisions,
+  Project,
+  Sop,
+  BusinessRule,
+  Decision,
+  ProjectActivity,
+} from '@/lib/supabase/business-context-queries';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -795,13 +810,17 @@ export function formatEntityForPrompt(context: EntityContext): string {
   if (entity.email) {
     lines.push(`Email: ${entity.email}`);
   }
-  if (entity.description) {
-    lines.push(`Description: ${entity.description}`);
-  }
   if (entity.metadata && Object.keys(entity.metadata).length > 0) {
     if (entity.metadata.role) {
       lines.push(`Role: ${entity.metadata.role}`);
     }
+  }
+  if (entity.description) {
+    lines.push(`Description: ${entity.description}`);
+  }
+  // User-provided notes (from "X is the Y" type statements)
+  if (entity.notes) {
+    lines.push(`User Notes: ${entity.notes}`);
   }
   if (entity.aliases && entity.aliases.length > 0) {
     lines.push(`Also known as: ${entity.aliases.join(', ')}`);
@@ -924,6 +943,306 @@ export function formatMultiEntityForPrompt(
     lines.push(formatEntityForPrompt(context));
     lines.push('---\n');
   }
+
+  return lines.join('\n');
+}
+
+// ============================================
+// BUSINESS CONTEXT (Loop 9)
+// ============================================
+
+export interface ProjectContext {
+  project: Project;
+  activity: ProjectActivity[];
+  decisions: Decision[];
+  relatedTasks: TaskContext[];
+}
+
+export interface BusinessContext {
+  projects: Project[];
+  sops: Sop[];
+  rules: BusinessRule[];
+  recentDecisions: Decision[];
+}
+
+/**
+ * Fetch context for a specific project by name
+ * Used for "What's the status of X?" queries
+ */
+export async function fetchProjectContext(projectName: string): Promise<ProjectContext | null> {
+  // Find project by name
+  const project = await getProjectByName(projectName);
+  if (!project) return null;
+
+  // Fetch related data in parallel
+  const [activity, decisions, tasksResult] = await Promise.all([
+    getProjectActivity(project.id, 10),
+    getDecisions({ projectId: project.id, limit: 10 }),
+    // Search for tasks related to this project
+    supabase
+      .from('tasks')
+      .select('id, title, description, due_date, priority, status, scheduled_start, scheduled_end')
+      .or(`title.ilike.%${project.name}%,description.ilike.%${project.name}%`)
+      .not('status', 'in', '("completed","cancelled")')
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .limit(10),
+  ]);
+
+  return {
+    project,
+    activity,
+    decisions,
+    relatedTasks: (tasksResult.data || []) as TaskContext[],
+  };
+}
+
+/**
+ * Format project context as a string for AI prompt
+ */
+export function formatProjectForPrompt(context: ProjectContext): string {
+  const { project, activity, decisions, relatedTasks } = context;
+  const lines: string[] = [];
+
+  // Project header
+  const statusColors: Record<string, string> = {
+    active: '🟢',
+    on_hold: '🟡',
+    completed: '✅',
+    cancelled: '❌',
+  };
+  const statusIcon = statusColors[project.status] || '';
+
+  lines.push(`## PROJECT: ${project.name} ${statusIcon}\n`);
+  lines.push(`**Status**: ${project.status.toUpperCase()}`);
+
+  if (project.description) {
+    lines.push(`**Description**: ${project.description}`);
+  }
+
+  if (project.started_at) {
+    lines.push(`**Started**: ${new Date(project.started_at).toLocaleDateString()}`);
+  }
+
+  if (project.target_completion) {
+    lines.push(`**Target Completion**: ${new Date(project.target_completion).toLocaleDateString()}`);
+  }
+
+  lines.push('');
+
+  // Current blockers
+  if (project.current_blockers && project.current_blockers.length > 0) {
+    lines.push('### Current Blockers');
+    project.current_blockers.forEach((blocker) => {
+      lines.push(`- ⚠️ ${blocker}`);
+    });
+    lines.push('');
+  }
+
+  // Next steps
+  if (project.next_steps && project.next_steps.length > 0) {
+    lines.push('### Next Steps');
+    project.next_steps.forEach((step) => {
+      lines.push(`- ${step}`);
+    });
+    lines.push('');
+  }
+
+  // Milestones
+  if (project.milestones && project.milestones.length > 0) {
+    lines.push('### Milestones');
+    project.milestones.forEach((milestone) => {
+      const completed = milestone.completed_at ? '✓' : '○';
+      const date = milestone.target_date
+        ? ` (target: ${new Date(milestone.target_date).toLocaleDateString()})`
+        : '';
+      lines.push(`- ${completed} ${milestone.name}${date}`);
+    });
+    lines.push('');
+  }
+
+  // Key contacts
+  if (project.key_contacts && project.key_contacts.length > 0) {
+    lines.push('### Key Contacts');
+    lines.push(project.key_contacts.join(', '));
+    lines.push('');
+  }
+
+  // Related tasks
+  if (relatedTasks.length > 0) {
+    lines.push('### Related Tasks');
+    relatedTasks.forEach((task) => {
+      const priority = task.priority === 'high' ? '!' : '';
+      const dueInfo = task.due_date
+        ? ` (due ${new Date(task.due_date).toLocaleDateString()})`
+        : '';
+      lines.push(`- ${priority}${task.title}${dueInfo} [${task.status}]`);
+    });
+    lines.push('');
+  }
+
+  // Recent activity
+  if (activity.length > 0) {
+    lines.push('### Recent Activity');
+    activity.slice(0, 5).forEach((a) => {
+      const date = new Date(a.occurred_at).toLocaleDateString();
+      lines.push(`- [${date}] ${a.description}`);
+    });
+    lines.push('');
+  }
+
+  // Recent decisions
+  if (decisions.length > 0) {
+    lines.push('### Key Decisions');
+    decisions.slice(0, 3).forEach((d) => {
+      const date = new Date(d.decided_at).toLocaleDateString();
+      lines.push(`- [${date}] ${d.decision}`);
+      if (d.rationale) {
+        lines.push(`  _Rationale: ${d.rationale}_`);
+      }
+    });
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Fetch full business context for agent use
+ * Used for general context about all projects, SOPs, and rules
+ */
+export async function fetchBusinessContext(): Promise<BusinessContext> {
+  return getFullBusinessContext();
+}
+
+/**
+ * Format full business context for AI prompt
+ * Used when agent needs broad context about the business
+ */
+export function formatBusinessContextForPrompt(context: BusinessContext): string {
+  const lines: string[] = [];
+
+  // Active Projects Summary
+  lines.push('## ACTIVE PROJECTS\n');
+  if (context.projects.length === 0) {
+    lines.push('No active projects.\n');
+  } else {
+    context.projects.forEach((project) => {
+      const blockers = project.current_blockers?.length
+        ? ` (${project.current_blockers.length} blockers)`
+        : '';
+      lines.push(`- **${project.name}**${blockers}`);
+      if (project.description) {
+        lines.push(`  ${project.description.substring(0, 100)}${project.description.length > 100 ? '...' : ''}`);
+      }
+    });
+    lines.push('');
+  }
+
+  // Business Rules (constraints the agent must follow)
+  if (context.rules.length > 0) {
+    lines.push('## BUSINESS RULES\n');
+    context.rules.forEach((rule) => {
+      const typeIcon = rule.rule_type === 'constraint' ? '🚫' : rule.rule_type === 'requirement' ? '✓' : '💡';
+      lines.push(`${typeIcon} **${rule.name}**`);
+      lines.push(`  When: ${rule.condition}`);
+      lines.push(`  Then: ${rule.action}`);
+    });
+    lines.push('');
+  }
+
+  // Recent Decisions
+  if (context.recentDecisions.length > 0) {
+    lines.push('## RECENT DECISIONS\n');
+    context.recentDecisions.slice(0, 5).forEach((decision) => {
+      const date = new Date(decision.decided_at).toLocaleDateString();
+      lines.push(`- [${date}] ${decision.decision}`);
+    });
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Find applicable SOPs for a given action type
+ * Used when generating drafts or executing tasks
+ */
+export async function fetchApplicableSops(
+  category: 'email' | 'scheduling' | 'follow_up' | 'communication' | 'task_management' | 'other'
+): Promise<Sop[]> {
+  return getSops(category, true);
+}
+
+/**
+ * Format SOPs for AI prompt
+ * Used to guide the agent on how to perform certain actions
+ */
+export function formatSopsForPrompt(sops: Sop[]): string {
+  if (sops.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [];
+  lines.push('## STANDARD OPERATING PROCEDURES\n');
+  lines.push('Follow these procedures when performing this action:\n');
+
+  sops.forEach((sop) => {
+    lines.push(`### ${sop.name}`);
+    if (sop.description) {
+      lines.push(`_${sop.description}_\n`);
+    }
+
+    lines.push('**Steps:**');
+    sop.steps.forEach((step) => {
+      lines.push(`${step.step_number}. ${step.instruction}`);
+      if (step.examples) {
+        lines.push(`   _Example: ${step.examples}_`);
+      }
+    });
+
+    if (sop.examples && sop.examples.length > 0) {
+      lines.push('\n**Examples:**');
+      sop.examples.forEach((ex) => {
+        lines.push(`- Input: "${ex.input}"`);
+        lines.push(`  Output: "${ex.expected_output}"`);
+      });
+    }
+
+    lines.push('');
+  });
+
+  return lines.join('\n');
+}
+
+/**
+ * Search decisions for a query
+ * Used to find past decisions about a topic
+ */
+export async function fetchDecisionContext(query: string): Promise<Decision[]> {
+  return searchDecisions(query, 10);
+}
+
+/**
+ * Format decisions for AI prompt
+ */
+export function formatDecisionsForPrompt(decisions: Decision[]): string {
+  if (decisions.length === 0) {
+    return 'No relevant decisions found.';
+  }
+
+  const lines: string[] = [];
+  lines.push('## RELEVANT DECISIONS\n');
+
+  decisions.forEach((decision) => {
+    const date = new Date(decision.decided_at).toLocaleDateString();
+    lines.push(`### [${date}] ${decision.decision}`);
+    if (decision.rationale) {
+      lines.push(`**Rationale**: ${decision.rationale}`);
+    }
+    if (decision.context) {
+      lines.push(`**Context**: ${decision.context}`);
+    }
+    lines.push('');
+  });
 
   return lines.join('\n');
 }

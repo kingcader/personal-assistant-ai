@@ -17,11 +17,16 @@ import {
   DRAFT_GENERATION_PROMPT,
   INFO_QUERY_PROMPT,
   ENTITY_QUERY_PROMPT,
+  PROJECT_QUERY_PROMPT,
+  DECISION_EXTRACTION_PROMPT,
   parseIntentResponse,
   parseAgendaResponse,
   parseDraftResponse,
   parseInfoResponse,
   parseEntityQueryResponse,
+  parseProjectQueryResponse,
+  parseDecisionExtractionResponse,
+  buildDraftPromptWithSops,
   IntentClassification,
 } from '@/lib/ai/chat-prompts';
 import {
@@ -35,17 +40,26 @@ import {
   fetchKBContext,
   fetchEntityContext,
   fetchMultiEntityContext,
+  fetchProjectContext,
+  fetchApplicableSops,
   formatAgendaForPrompt,
   formatPersonForPrompt,
   formatKBForPrompt,
   formatEntityForPrompt,
   formatMultiEntityForPrompt,
+  formatProjectForPrompt,
+  formatSopsForPrompt,
   findMeeting,
   findTask,
   searchEmailsContext,
   formatEmailSearchForPrompt,
   parseDateReference,
 } from '@/lib/chat/context';
+import {
+  getProjectByName,
+  logDecision,
+  getActiveProjects,
+} from '@/lib/supabase/business-context-queries';
 import {
   extractEntityNamesFromMessage,
   ENTITY_EXTRACTION_SYSTEM_PROMPT,
@@ -362,6 +376,7 @@ async function handleAgendaQuery(
 
 /**
  * Handle draft generation - create email draft
+ * Enhanced with SOP support for consistent email patterns
  */
 async function handleDraftGeneration(
   message: string,
@@ -384,9 +399,34 @@ async function handleDraftGeneration(
     }
   }
 
+  // Check for relevant SOPs for email drafting
+  let sopContext = '';
+  try {
+    // Determine email category based on action type
+    const actionType = intent.entities.action_type;
+    let sopCategory: 'email' | 'follow_up' | 'communication' = 'email';
+    if (actionType === 'follow_up' || message.toLowerCase().includes('follow')) {
+      sopCategory = 'follow_up';
+    }
+
+    const applicableSops = await fetchApplicableSops(sopCategory);
+    if (applicableSops.length > 0) {
+      sopContext = formatSopsForPrompt(applicableSops);
+      console.log(`📋 Found ${applicableSops.length} applicable SOPs for email drafting`);
+    }
+  } catch (e) {
+    console.log('⚠️ Could not fetch SOPs:', e);
+  }
+
+  // Build prompt with optional SOP context
+  let systemPrompt = DRAFT_GENERATION_PROMPT;
+  if (sopContext) {
+    systemPrompt = buildDraftPromptWithSops(DRAFT_GENERATION_PROMPT, sopContext);
+  }
+
   // Generate draft
   const userPrompt = `User request: "${message}"${contextString ? `\n\n${contextString}` : ''}`;
-  const aiResponse = await callAI(DRAFT_GENERATION_PROMPT, userPrompt);
+  const aiResponse = await callAI(systemPrompt, userPrompt);
   const draft = parseDraftResponse(aiResponse);
 
   // Build response with draft preview
@@ -1104,6 +1144,240 @@ async function handleEntityUpdate(
   };
 }
 
+/**
+ * Handle project query - questions about specific projects/deals
+ */
+async function handleProjectQuery(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('📊 Handling project query:', message);
+
+  // Extract project name from topics or message
+  const projectNames = [
+    ...intent.entities.project_names,
+    ...intent.entities.topics,
+  ];
+
+  // If no project name found, try to parse from message
+  if (projectNames.length === 0) {
+    // Common patterns: "status of X", "how is X going", "blockers on X"
+    const patterns = [
+      /status\s+(?:of\s+)?(?:the\s+)?["']?([^"'?]+)["']?/i,
+      /how\s+is\s+(?:the\s+)?["']?([^"'?]+)["']?\s+(?:going|doing|progressing)/i,
+      /blockers?\s+(?:on|for)\s+(?:the\s+)?["']?([^"'?]+)["']?/i,
+      /(?:what'?s?|whats)\s+(?:happening|going\s+on)\s+with\s+(?:the\s+)?["']?([^"'?]+)["']?/i,
+      /update\s+(?:on|about)\s+(?:the\s+)?["']?([^"'?]+)["']?/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match && match[1]) {
+        projectNames.push(match[1].trim());
+        break;
+      }
+    }
+  }
+
+  if (projectNames.length === 0) {
+    // No specific project mentioned - list all active projects
+    const activeProjects = await getActiveProjects();
+
+    if (activeProjects.length === 0) {
+      return {
+        success: true,
+        response: "You don't have any active projects. Would you like to create one?",
+        type: 'info',
+        confidence: 'high',
+        intent,
+      };
+    }
+
+    const lines = ['Here are your active projects:\n'];
+    activeProjects.forEach((project) => {
+      const blockers = project.current_blockers?.length
+        ? ` (${project.current_blockers.length} blockers)`
+        : '';
+      lines.push(`**${project.name}**${blockers}`);
+      if (project.description) {
+        lines.push(`_${project.description.substring(0, 100)}${project.description.length > 100 ? '...' : ''}_\n`);
+      }
+    });
+
+    lines.push('\nAsk me about a specific project for more details.');
+
+    return {
+      success: true,
+      response: lines.join('\n'),
+      type: 'info',
+      confidence: 'high',
+      intent,
+    };
+  }
+
+  // Fetch project context for the first mentioned project
+  const projectContext = await fetchProjectContext(projectNames[0]);
+
+  if (!projectContext) {
+    // Check if there are similar projects
+    const activeProjects = await getActiveProjects();
+    const suggestions = activeProjects
+      .filter((p) => p.name.toLowerCase().includes(projectNames[0].toLowerCase().split(' ')[0]))
+      .map((p) => p.name);
+
+    let response = `I couldn't find a project called "${projectNames[0]}"`;
+    if (suggestions.length > 0) {
+      response += `. Did you mean: ${suggestions.join(', ')}?`;
+    } else if (activeProjects.length > 0) {
+      response += `. Your active projects are: ${activeProjects.map((p) => p.name).join(', ')}`;
+    }
+
+    return {
+      success: true,
+      response,
+      type: 'info',
+      confidence: 'medium',
+      intent,
+    };
+  }
+
+  // Format context for AI
+  const contextString = formatProjectForPrompt(projectContext);
+
+  // Generate response
+  const userPrompt = `User question: "${message}"\n\n${contextString}`;
+  const aiResponse = await callAI(PROJECT_QUERY_PROMPT, userPrompt);
+  const parsed = parseProjectQueryResponse(aiResponse);
+
+  // Build response
+  const responseLines: string[] = [];
+
+  // Status summary with icon
+  const statusIcons: Record<string, string> = {
+    active: '🟢',
+    on_hold: '🟡',
+    completed: '✅',
+    cancelled: '❌',
+  };
+  const statusIcon = statusIcons[projectContext.project.status] || '';
+  responseLines.push(`**${projectContext.project.name}** ${statusIcon} ${projectContext.project.status.toUpperCase()}`);
+  responseLines.push('');
+  responseLines.push(parsed.status_summary);
+
+  if (parsed.details) {
+    responseLines.push('');
+    responseLines.push(parsed.details);
+  }
+
+  if (parsed.blockers.length > 0) {
+    responseLines.push('');
+    responseLines.push('**Blockers:**');
+    parsed.blockers.forEach((blocker) => {
+      responseLines.push(`- ⚠️ ${blocker}`);
+    });
+  }
+
+  if (parsed.next_steps.length > 0) {
+    responseLines.push('');
+    responseLines.push('**Next Steps:**');
+    parsed.next_steps.forEach((step) => {
+      responseLines.push(`- ${step}`);
+    });
+  }
+
+  if (parsed.pending_tasks.length > 0) {
+    responseLines.push('');
+    responseLines.push('**Related Tasks:**');
+    parsed.pending_tasks.forEach((task) => {
+      responseLines.push(`- ${task}`);
+    });
+  }
+
+  if (parsed.suggested_actions.length > 0) {
+    responseLines.push('');
+    responseLines.push('**Suggested Actions:**');
+    parsed.suggested_actions.forEach((action) => {
+      responseLines.push(`- ${action}`);
+    });
+  }
+
+  return {
+    success: true,
+    response: responseLines.join('\n'),
+    type: 'info',
+    confidence: parsed.confidence,
+    intent,
+  };
+}
+
+/**
+ * Handle decision logging - record a business decision
+ */
+async function handleDecisionLog(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('📝 Handling decision log:', message);
+
+  // Extract decision details using AI
+  const aiResponse = await callAI(DECISION_EXTRACTION_PROMPT, `User statement: "${message}"`);
+  const extracted = parseDecisionExtractionResponse(aiResponse);
+
+  if (!extracted.decision) {
+    return {
+      success: true,
+      response: "I couldn't extract a clear decision from your message. Could you rephrase? For example:\n- \"Remember that we decided to postpone the launch until Q2\"\n- \"Log that the budget was approved at $50k\"\n- \"Record that we're going with vendor A for the project\"",
+      type: 'general',
+      confidence: 'low',
+      intent,
+    };
+  }
+
+  // Find related project if mentioned
+  let projectId: string | null = null;
+  if (extracted.project_name) {
+    const project = await getProjectByName(extracted.project_name);
+    if (project) {
+      projectId = project.id;
+    }
+  }
+
+  // Log the decision
+  const decision = await logDecision({
+    decision: extracted.decision,
+    rationale: extracted.rationale || undefined,
+    context: extracted.context || undefined,
+    project_id: projectId || undefined,
+    source: 'chat',
+    source_reference: message,
+  });
+
+  // Build confirmation response
+  const responseLines = ["Got it! I've recorded this decision:"];
+  responseLines.push('');
+  responseLines.push(`**${decision.decision}**`);
+
+  if (decision.rationale) {
+    responseLines.push(`_Rationale: ${decision.rationale}_`);
+  }
+
+  if (projectId && extracted.project_name) {
+    responseLines.push('');
+    responseLines.push(`Linked to project: **${extracted.project_name}**`);
+  }
+
+  responseLines.push('');
+  responseLines.push(`Recorded on ${new Date(decision.decided_at).toLocaleDateString()}`);
+
+  return {
+    success: true,
+    response: responseLines.join('\n'),
+    type: 'info',
+    confidence: extracted.confidence,
+    intent,
+  };
+}
+
 // ============================================
 // MAIN HANDLER
 // ============================================
@@ -1214,6 +1488,12 @@ export async function POST(request: NextRequest) {
         break;
       case 'entity_query':
         response = await handleEntityQuery(message, intent);
+        break;
+      case 'project_query':
+        response = await handleProjectQuery(message, intent);
+        break;
+      case 'decision_log':
+        response = await handleDecisionLog(message, intent);
         break;
       case 'general':
       default:
