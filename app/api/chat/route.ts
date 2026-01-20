@@ -55,6 +55,7 @@ import {
   upsertEntity,
   upsertRelationship,
   findEntityByName,
+  renameEntity,
 } from '@/lib/entities/queries';
 import type { Entity } from '@/lib/entities/queries';
 import { logAuditEvent } from '@/lib/supabase/audit-queries';
@@ -918,6 +919,66 @@ async function handleEntityUpdate(
 ): Promise<ChatResponse> {
   console.log('👤 Handling entity update:', message);
 
+  // Check for rename patterns first
+  // Patterns: "It's not called X, it's called Y", "It's just called Y", "save it as Y", "rename X to Y", "call it Y"
+  const renamePatterns = [
+    /(?:it'?s?\s+)?not\s+called\s+[""']?(.+?)[""']?[.,]?\s*(?:it'?s?\s+)?(?:just\s+)?(?:called\s+)?[""']?(.+?)[""']?$/i,
+    /(?:it'?s?\s+)?just\s+called\s+[""']?(.+?)[""']?$/i,
+    /save\s+(?:it\s+)?as\s+[""']?(.+?)[""']?$/i,
+    /rename\s+(?:it\s+)?(?:to\s+)?[""']?(.+?)[""']?$/i,
+    /call\s+it\s+[""']?(.+?)[""']?(?:\s+not\s+.+)?$/i,
+    /(?:no,?\s+)?(?:don'?t\s+save\s+)?[""']?(.+?)[""']?\s+save\s+(?:it\s+)?as\s+[""']?(.+?)[""']?$/i,
+  ];
+
+  for (const pattern of renamePatterns) {
+    const match = message.match(pattern);
+    if (match) {
+      // Extract the new name (last capture group with content)
+      const newName = match[match.length - 1]?.trim() || match[1]?.trim();
+      if (newName) {
+        console.log('👤 Detected rename request, new name:', newName);
+
+        // Find the most recently mentioned entity to rename
+        // Look for entities that might match what was discussed
+        const possibleOldNames = match.length > 2 ? [match[1]?.trim()] : [];
+
+        // Try to find the entity to rename
+        let entityToRename = null;
+
+        // First try the old name if provided
+        for (const oldName of possibleOldNames) {
+          if (oldName) {
+            entityToRename = await findEntityByName(oldName);
+            if (entityToRename) break;
+          }
+        }
+
+        // If not found by old name, try partial match with the new name (user might be correcting it)
+        if (!entityToRename) {
+          entityToRename = await findEntityByName(newName);
+        }
+
+        if (entityToRename) {
+          const oldName = entityToRename.name;
+          const renamed = await renameEntity(entityToRename.id, newName);
+
+          if (renamed) {
+            return {
+              success: true,
+              response: `Got it! I've renamed **${oldName}** to **${renamed.name}**. The old name "${oldName}" is now saved as an alias.`,
+              type: 'info',
+              confidence: 'high',
+              intent,
+            };
+          }
+        }
+
+        // If we couldn't find an entity to rename, fall through to normal entity creation
+        console.log('👤 Could not find entity to rename, will create new entity');
+      }
+    }
+  }
+
   // Build a prompt for entity extraction from the user's statement
   const extractionPrompt = `Extract entities and relationships from this user statement. The user is explicitly telling you about people, organizations, or projects they want you to remember.
 
@@ -1122,51 +1183,42 @@ export async function POST(request: NextRequest) {
     // Step 5: Route to appropriate handler
     let response: ChatResponse;
 
-    // Check for entity-specific queries (e.g., "tell me about Jen", "who is Sarah")
-    const entityQueryPatterns = [
-      /^(?:tell me about|who is|what do you know about|info on|information about)\s+(.+)/i,
-      /^(?:what's happening with|what about)\s+(.+?)\??\s*$/i,
-    ];
-    const isEntityQuery = entityQueryPatterns.some(p => p.test(message)) &&
-                          intent.entities.person_names.length > 0;
-
-    if (isEntityQuery) {
-      // Route to entity handler for "tell me about X" type queries
-      response = await handleEntityQuery(message, intent);
-    } else {
-      switch (intent.intent) {
-        case 'knowledge_question':
-          response = await handleKnowledgeQuestion(message, intent);
-          break;
-        case 'agenda_query':
-          response = await handleAgendaQuery(message, intent);
-          break;
-        case 'draft_generation':
-          response = await handleDraftGeneration(message, intent);
-          break;
-        case 'info_query':
-          response = await handleInfoQuery(message, intent);
-          break;
-        case 'task_creation':
-          response = await handleTaskCreation(message, intent);
-          break;
-        case 'event_creation':
-          response = await handleEventCreation(message, intent);
-          break;
-        case 'email_search':
-          response = await handleEmailSearch(message, intent);
-          break;
-        case 'summarization':
-          response = await handleSummarization(message, intent);
-          break;
-        case 'entity_update':
-          response = await handleEntityUpdate(message, intent);
-          break;
-        case 'general':
-        default:
-          response = await handleGeneral(message, intent);
-          break;
-      }
+    // Route to appropriate handler based on intent
+    switch (intent.intent) {
+      case 'knowledge_question':
+        response = await handleKnowledgeQuestion(message, intent);
+        break;
+      case 'agenda_query':
+        response = await handleAgendaQuery(message, intent);
+        break;
+      case 'draft_generation':
+        response = await handleDraftGeneration(message, intent);
+        break;
+      case 'info_query':
+        response = await handleInfoQuery(message, intent);
+        break;
+      case 'task_creation':
+        response = await handleTaskCreation(message, intent);
+        break;
+      case 'event_creation':
+        response = await handleEventCreation(message, intent);
+        break;
+      case 'email_search':
+        response = await handleEmailSearch(message, intent);
+        break;
+      case 'summarization':
+        response = await handleSummarization(message, intent);
+        break;
+      case 'entity_update':
+        response = await handleEntityUpdate(message, intent);
+        break;
+      case 'entity_query':
+        response = await handleEntityQuery(message, intent);
+        break;
+      case 'general':
+      default:
+        response = await handleGeneral(message, intent);
+        break;
     }
 
     // Add processing time

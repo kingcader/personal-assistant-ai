@@ -288,6 +288,52 @@ export async function markEntityImportant(id: string, important: boolean): Promi
   }
 }
 
+/**
+ * Rename an entity
+ * Moves the old name to aliases and sets the new name
+ */
+export async function renameEntity(
+  entityId: string,
+  newName: string
+): Promise<Entity | null> {
+  // Get existing entity
+  const existing = await getEntityById(entityId);
+  if (!existing) {
+    console.error('[EntityQueries] Entity not found for rename:', entityId);
+    return null;
+  }
+
+  // Don't rename if already the same name
+  if (existing.name.toLowerCase() === newName.toLowerCase()) {
+    return existing;
+  }
+
+  // Add old name to aliases (if not already there)
+  const updatedAliases = [...new Set([
+    ...existing.aliases,
+    existing.name, // Add old name as alias
+  ])].filter(a => a.toLowerCase() !== newName.toLowerCase()); // Remove new name from aliases if present
+
+  const { data, error } = await db
+    .from('entities')
+    .update({
+      name: newName,
+      aliases: updatedAliases,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', entityId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[EntityQueries] Error renaming entity:', error);
+    return existing;
+  }
+
+  console.log(`[EntityQueries] Renamed entity from "${existing.name}" to "${newName}"`);
+  return data as Entity;
+}
+
 // ============================================
 // RELATIONSHIPS
 // ============================================
