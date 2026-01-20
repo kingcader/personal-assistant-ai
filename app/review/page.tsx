@@ -33,6 +33,19 @@ type FollowUpEditState = {
   };
 };
 
+type ConfirmAction = {
+  type: 'reject_task' | 'reject_followup';
+  id: string;
+  title: string;
+};
+
+type UndoAction = {
+  type: 'reject_task' | 'reject_followup';
+  id: string;
+  data: PendingSuggestion | FollowUpWithThread;
+  timeoutId: NodeJS.Timeout;
+};
+
 export default function ReviewPage() {
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [suggestions, setSuggestions] = useState<PendingSuggestion[]>([]);
@@ -47,7 +60,9 @@ export default function ReviewPage() {
   const [followUpEdits, setFollowUpEdits] = useState<FollowUpEditState>({});
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; action?: { label: string; onClick: () => void } } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [pendingUndo, setPendingUndo] = useState<UndoAction | null>(null);
 
   useEffect(() => {
     loadData();
@@ -71,9 +86,14 @@ export default function ReviewPage() {
     }
   }
 
-  function showToast(message: string, type: 'success' | 'error') {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+  function showToast(message: string, type: 'success' | 'error', action?: { label: string; onClick: () => void }) {
+    setToast({ message, type, action });
+    if (!action) {
+      setTimeout(() => setToast(null), 3000);
+    } else {
+      // Longer timeout for undo actions
+      setTimeout(() => setToast(null), 5000);
+    }
   }
 
   // Task suggestion handlers
@@ -119,35 +139,76 @@ export default function ReviewPage() {
     }
   }
 
-  async function handleRejectTask(suggestionId: string) {
-    if (processingIds.has(suggestionId)) return;
-    setProcessingIds((prev) => new Set(prev).add(suggestionId));
+  function requestRejectTask(suggestion: PendingSuggestion) {
+    setConfirmAction({
+      type: 'reject_task',
+      id: suggestion.id,
+      title: suggestion.title,
+    });
+  }
 
-    try {
-      await rejectSuggestion(suggestionId);
-      setSuggestions((prev) => prev.filter((s) => s.id !== suggestionId));
-      setTaskEdits((prev) => {
-        const newEdits = { ...prev };
-        delete newEdits[suggestionId];
-        return newEdits;
-      });
-      setCounts((prev) => ({
-        ...prev,
-        task_suggestions: prev.task_suggestions - 1,
-        total: prev.total - 1,
-      }));
-      setExpandedId(null);
-      showToast('Task rejected', 'success');
-    } catch (error) {
-      console.error('Failed to reject task:', error);
-      showToast('Failed to reject task', 'error');
-    } finally {
-      setProcessingIds((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(suggestionId);
-        return newSet;
-      });
-    }
+  async function executeRejectTask(suggestionId: string) {
+    const suggestion = suggestions.find((s) => s.id === suggestionId);
+    if (!suggestion) return;
+
+    // Optimistically remove from UI
+    setSuggestions((prev) => prev.filter((s) => s.id !== suggestionId));
+    setCounts((prev) => ({
+      ...prev,
+      task_suggestions: prev.task_suggestions - 1,
+      total: prev.total - 1,
+    }));
+    setExpandedId(null);
+    setConfirmAction(null);
+
+    // Set up undo with delayed API call
+    const timeoutId = setTimeout(async () => {
+      setPendingUndo(null);
+      try {
+        await rejectSuggestion(suggestionId);
+      } catch (error) {
+        console.error('Failed to reject task:', error);
+        // Restore on failure
+        setSuggestions((prev) => [...prev, suggestion].sort((a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        ));
+        setCounts((prev) => ({
+          ...prev,
+          task_suggestions: prev.task_suggestions + 1,
+          total: prev.total + 1,
+        }));
+        showToast('Failed to reject task', 'error');
+      }
+    }, 5000);
+
+    setPendingUndo({
+      type: 'reject_task',
+      id: suggestionId,
+      data: suggestion,
+      timeoutId,
+    });
+
+    showToast('Task rejected', 'success', {
+      label: 'Undo',
+      onClick: () => undoRejectTask(suggestionId, suggestion, timeoutId),
+    });
+  }
+
+  function undoRejectTask(suggestionId: string, suggestion: PendingSuggestion, timeoutId: NodeJS.Timeout) {
+    clearTimeout(timeoutId);
+    setPendingUndo(null);
+    setToast(null);
+
+    // Restore the suggestion
+    setSuggestions((prev) => [...prev, suggestion].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ));
+    setCounts((prev) => ({
+      ...prev,
+      task_suggestions: prev.task_suggestions + 1,
+      total: prev.total + 1,
+    }));
+    showToast('Task restored', 'success');
   }
 
   // Follow-up handlers
@@ -193,42 +254,83 @@ export default function ReviewPage() {
     }
   }
 
-  async function handleRejectFollowUp(followUpId: string) {
-    if (processingIds.has(followUpId)) return;
-    setProcessingIds((prev) => new Set(prev).add(followUpId));
+  function requestRejectFollowUp(followUp: FollowUpWithThread) {
+    setConfirmAction({
+      type: 'reject_followup',
+      id: followUp.id,
+      title: followUp.thread.subject || 'Follow-up',
+    });
+  }
 
-    try {
-      await rejectFollowUp(followUpId);
-      setFollowUps((prev) => prev.filter((f) => f.id !== followUpId));
-      setFollowUpEdits((prev) => {
-        const newEdits = { ...prev };
-        delete newEdits[followUpId];
-        return newEdits;
-      });
-      setCounts((prev) => ({
-        ...prev,
-        follow_up_suggestions: prev.follow_up_suggestions - 1,
-        total: prev.total - 1,
-      }));
-      setExpandedId(null);
-      showToast('Follow-up rejected', 'success');
-    } catch (error) {
-      console.error('Failed to reject follow-up:', error);
-      showToast('Failed to reject follow-up', 'error');
-    } finally {
-      setProcessingIds((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(followUpId);
-        return newSet;
-      });
-    }
+  async function executeRejectFollowUp(followUpId: string) {
+    const followUp = followUps.find((f) => f.id === followUpId);
+    if (!followUp) return;
+
+    // Optimistically remove from UI
+    setFollowUps((prev) => prev.filter((f) => f.id !== followUpId));
+    setCounts((prev) => ({
+      ...prev,
+      follow_up_suggestions: prev.follow_up_suggestions - 1,
+      total: prev.total - 1,
+    }));
+    setExpandedId(null);
+    setConfirmAction(null);
+
+    // Set up undo with delayed API call
+    const timeoutId = setTimeout(async () => {
+      setPendingUndo(null);
+      try {
+        await rejectFollowUp(followUpId);
+      } catch (error) {
+        console.error('Failed to reject follow-up:', error);
+        // Restore on failure
+        setFollowUps((prev) => [...prev, followUp].sort((a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        ));
+        setCounts((prev) => ({
+          ...prev,
+          follow_up_suggestions: prev.follow_up_suggestions + 1,
+          total: prev.total + 1,
+        }));
+        showToast('Failed to reject follow-up', 'error');
+      }
+    }, 5000);
+
+    setPendingUndo({
+      type: 'reject_followup',
+      id: followUpId,
+      data: followUp,
+      timeoutId,
+    });
+
+    showToast('Follow-up rejected', 'success', {
+      label: 'Undo',
+      onClick: () => undoRejectFollowUp(followUpId, followUp, timeoutId),
+    });
+  }
+
+  function undoRejectFollowUp(followUpId: string, followUp: FollowUpWithThread, timeoutId: NodeJS.Timeout) {
+    clearTimeout(timeoutId);
+    setPendingUndo(null);
+    setToast(null);
+
+    // Restore the follow-up
+    setFollowUps((prev) => [...prev, followUp].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ));
+    setCounts((prev) => ({
+      ...prev,
+      follow_up_suggestions: prev.follow_up_suggestions + 1,
+      total: prev.total + 1,
+    }));
+    showToast('Follow-up restored', 'success');
   }
 
   function getPriorityDot(priority: 'low' | 'med' | 'high'): string {
     switch (priority) {
-      case 'high': return 'bg-red-500';
-      case 'med': return 'bg-yellow-500';
-      case 'low': return 'bg-blue-400';
+      case 'high': return 'bg-destructive';
+      case 'med': return 'bg-warning';
+      case 'low': return 'bg-primary';
     }
   }
 
@@ -250,51 +352,55 @@ export default function ReviewPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-pulse space-y-3 w-64">
+          <div className="h-4 bg-muted rounded-full w-3/4"></div>
+          <div className="h-4 bg-muted rounded-full w-1/2"></div>
+          <div className="h-4 bg-muted rounded-full w-2/3"></div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background pb-20 md:pb-0">
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-gray-900">Review Queue</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-2xl font-semibold">Review Queue</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             {counts.total} item{counts.total !== 1 ? 's' : ''} pending approval
           </p>
         </div>
 
         {/* Tab Navigation */}
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
           <button
             onClick={() => setActiveTab('all')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            className={`px-4 py-2 text-sm font-medium rounded-xl transition-all active:scale-[0.97] ${
               activeTab === 'all'
-                ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-secondary-foreground hover:bg-muted'
             }`}
           >
             All ({counts.total})
           </button>
           <button
             onClick={() => setActiveTab('tasks')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            className={`px-4 py-2 text-sm font-medium rounded-xl transition-all active:scale-[0.97] ${
               activeTab === 'tasks'
-                ? 'bg-blue-600 text-white'
-                : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-primary/10 text-primary hover:bg-primary/20'
             }`}
           >
             Tasks ({counts.task_suggestions})
           </button>
           <button
             onClick={() => setActiveTab('follow-ups')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            className={`px-4 py-2 text-sm font-medium rounded-xl transition-all active:scale-[0.97] ${
               activeTab === 'follow-ups'
-                ? 'bg-purple-600 text-white'
-                : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-primary/10 text-primary hover:bg-primary/20'
             }`}
           >
             Follow-ups ({counts.follow_up_suggestions})
@@ -304,7 +410,7 @@ export default function ReviewPage() {
         {/* Content */}
         {counts.total === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-500">All caught up!</p>
+            <p className="text-muted-foreground">All caught up!</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -313,11 +419,11 @@ export default function ReviewPage() {
               <div>
                 {activeTab === 'all' && (
                   <div className="flex items-center gap-2 mb-2">
-                    <h2 className="text-sm font-medium text-gray-500">Tasks</h2>
-                    <span className="text-xs text-gray-400">{suggestions.length}</span>
+                    <h2 className="text-sm font-medium text-muted-foreground">Tasks</h2>
+                    <span className="text-xs text-muted-foreground">{suggestions.length}</span>
                   </div>
                 )}
-                <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                <div className="card-ios p-0 divide-y divide-border">
                   {suggestions.map((suggestion) => {
                     const isExpanded = expandedId === `task-${suggestion.id}`;
                     const isProcessing = processingIds.has(suggestion.id);
@@ -329,33 +435,33 @@ export default function ReviewPage() {
                       <div key={suggestion.id}>
                         {/* Compact Row */}
                         <div
-                          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted"
                           onClick={() => setExpandedId(isExpanded ? null : `task-${suggestion.id}`)}
                         >
                           {/* Type Indicator */}
-                          <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+                          <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0" />
 
                           {/* Priority Dot */}
                           <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getPriorityDot(suggestion.priority)}`} />
 
                           {/* Title */}
-                          <span className="flex-1 text-sm text-gray-900 truncate">
+                          <span className="flex-1 text-sm truncate">
                             {suggestion.title}
                           </span>
 
                           {/* Source */}
-                          <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">
+                          <span className="text-xs text-muted-foreground flex-shrink-0 hidden sm:block">
                             {suggestion.email.sender.name || suggestion.email.sender.email.split('@')[0]}
                           </span>
 
                           {/* Time */}
-                          <span className="text-xs text-gray-400 flex-shrink-0">
+                          <span className="text-xs text-muted-foreground flex-shrink-0">
                             {formatRelativeTime(suggestion.email.received_at)}
                           </span>
 
                           {/* Chevron */}
                           <svg
-                            className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                            className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"
@@ -366,46 +472,46 @@ export default function ReviewPage() {
 
                         {/* Expanded Content */}
                         {isExpanded && (
-                          <div className="px-4 pb-4 pt-2 bg-gray-50 border-t border-gray-100">
+                          <div className="px-4 pb-4 pt-2 bg-muted/30 border-t">
                             {/* Email Context */}
-                            <div className="text-xs text-gray-500 mb-3">
+                            <div className="text-xs text-muted-foreground mb-3">
                               <span className="font-medium">From email:</span> {suggestion.email.subject}
                             </div>
 
                             {/* Editable Fields */}
                             <div className="space-y-3 mb-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Task Title</label>
+                                <label className="block text-xs font-medium mb-1">Task Title</label>
                                 <input
                                   type="text"
                                   value={editedTitle}
                                   onChange={(e) => updateTaskEdit(suggestion.id, 'title', e.target.value)}
-                                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  className="input-ios"
                                   disabled={isProcessing}
                                 />
                               </div>
 
-                              <div className="text-xs text-gray-500 italic">
+                              <div className="text-xs text-muted-foreground italic">
                                 <span className="font-medium not-italic">Why:</span> {suggestion.why}
                               </div>
 
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Due Date</label>
+                                  <label className="block text-xs font-medium mb-1">Due Date</label>
                                   <input
                                     type="date"
                                     value={editedDueDate || ''}
                                     onChange={(e) => updateTaskEdit(suggestion.id, 'due_date', e.target.value || null)}
-                                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="input-ios"
                                     disabled={isProcessing}
                                   />
                                 </div>
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Priority</label>
+                                  <label className="block text-xs font-medium mb-1">Priority</label>
                                   <select
                                     value={editedPriority}
                                     onChange={(e) => updateTaskEdit(suggestion.id, 'priority', e.target.value as 'low' | 'med' | 'high')}
-                                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="input-ios"
                                     disabled={isProcessing}
                                   >
                                     <option value="low">Low</option>
@@ -421,14 +527,14 @@ export default function ReviewPage() {
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleApproveTask(suggestion); }}
                                 disabled={isProcessing}
-                                className="text-xs px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                                className="text-xs px-4 py-1.5 rounded-xl font-medium bg-success text-success-foreground active:scale-[0.97] disabled:opacity-50"
                               >
                                 {isProcessing ? '...' : 'Approve'}
                               </button>
                               <button
-                                onClick={(e) => { e.stopPropagation(); handleRejectTask(suggestion.id); }}
+                                onClick={(e) => { e.stopPropagation(); requestRejectTask(suggestion); }}
                                 disabled={isProcessing}
-                                className="text-xs px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                                className="text-xs px-4 py-1.5 rounded-xl font-medium bg-destructive text-destructive-foreground active:scale-[0.97] disabled:opacity-50"
                               >
                                 Reject
                               </button>
@@ -447,11 +553,11 @@ export default function ReviewPage() {
               <div>
                 {activeTab === 'all' && (
                   <div className="flex items-center gap-2 mb-2">
-                    <h2 className="text-sm font-medium text-gray-500">Follow-ups</h2>
-                    <span className="text-xs text-gray-400">{followUps.length}</span>
+                    <h2 className="text-sm font-medium text-muted-foreground">Follow-ups</h2>
+                    <span className="text-xs text-muted-foreground">{followUps.length}</span>
                   </div>
                 )}
-                <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                <div className="card-ios p-0 divide-y divide-border">
                   {followUps.map((followUp) => {
                     const isExpanded = expandedId === `followup-${followUp.id}`;
                     const isProcessing = processingIds.has(followUp.id);
@@ -462,30 +568,30 @@ export default function ReviewPage() {
                       <div key={followUp.id}>
                         {/* Compact Row */}
                         <div
-                          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted"
                           onClick={() => setExpandedId(isExpanded ? null : `followup-${followUp.id}`)}
                         >
                           {/* Type Indicator */}
-                          <div className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0" />
+                          <div className="w-2 h-2 rounded-full bg-chart-5 flex-shrink-0" />
 
                           {/* Title */}
-                          <span className="flex-1 text-sm text-gray-900 truncate">
+                          <span className="flex-1 text-sm truncate">
                             {followUp.thread.subject || 'No subject'}
                           </span>
 
                           {/* Waiting On */}
-                          <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">
+                          <span className="text-xs text-muted-foreground flex-shrink-0 hidden sm:block">
                             {followUp.thread.waiting_on_email?.split('@')[0]}
                           </span>
 
                           {/* Tone Badge */}
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 flex-shrink-0">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary flex-shrink-0">
                             {followUp.tone}
                           </span>
 
                           {/* Chevron */}
                           <svg
-                            className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                            className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"
@@ -496,39 +602,39 @@ export default function ReviewPage() {
 
                         {/* Expanded Content */}
                         {isExpanded && (
-                          <div className="px-4 pb-4 pt-2 bg-gray-50 border-t border-gray-100">
+                          <div className="px-4 pb-4 pt-2 bg-muted/30 border-t">
                             {/* Thread Context */}
-                            <div className="text-xs text-gray-500 mb-3">
+                            <div className="text-xs text-muted-foreground mb-3">
                               <span className="font-medium">Waiting on:</span> {followUp.thread.waiting_on_email}
                             </div>
 
                             {/* Editable Fields */}
                             <div className="space-y-3 mb-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Subject</label>
+                                <label className="block text-xs font-medium mb-1">Subject</label>
                                 <input
                                   type="text"
                                   value={editedSubject || ''}
                                   onChange={(e) => updateFollowUpEdit(followUp.id, 'subject', e.target.value)}
-                                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                  className="input-ios"
                                   disabled={isProcessing}
                                   placeholder="Re: Original subject"
                                 />
                               </div>
 
                               <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Message</label>
+                                <label className="block text-xs font-medium mb-1">Message</label>
                                 <textarea
                                   value={editedBody}
                                   onChange={(e) => updateFollowUpEdit(followUp.id, 'body', e.target.value)}
                                   rows={4}
-                                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                  className="input-ios min-h-[100px] resize-none"
                                   disabled={isProcessing}
                                 />
                               </div>
 
                               {followUp.ai_reasoning && (
-                                <div className="text-xs text-gray-500 italic">
+                                <div className="text-xs text-muted-foreground italic">
                                   <span className="font-medium not-italic">AI reasoning:</span> {followUp.ai_reasoning}
                                 </div>
                               )}
@@ -539,14 +645,14 @@ export default function ReviewPage() {
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleApproveFollowUp(followUp); }}
                                 disabled={isProcessing}
-                                className="text-xs px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                                className="text-xs px-4 py-1.5 rounded-xl font-medium bg-success text-success-foreground active:scale-[0.97] disabled:opacity-50"
                               >
                                 {isProcessing ? '...' : 'Approve & Send'}
                               </button>
                               <button
-                                onClick={(e) => { e.stopPropagation(); handleRejectFollowUp(followUp.id); }}
+                                onClick={(e) => { e.stopPropagation(); requestRejectFollowUp(followUp); }}
                                 disabled={isProcessing}
-                                className="text-xs px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                                className="text-xs px-4 py-1.5 rounded-xl font-medium bg-destructive text-destructive-foreground active:scale-[0.97] disabled:opacity-50"
                               >
                                 Reject
                               </button>
@@ -562,24 +668,61 @@ export default function ReviewPage() {
           </div>
         )}
 
-        {/* Navigation */}
-        <div className="mt-8 pt-4 border-t border-gray-200 flex gap-4">
-          <a href="/" className="text-sm text-blue-600 hover:text-blue-800">
-            ← Home
-          </a>
-          <a href="/tasks" className="text-sm text-blue-600 hover:text-blue-800">
-            Tasks →
-          </a>
-        </div>
       </div>
 
-      {/* Toast */}
+      {/* Confirmation Dialog */}
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="card-ios max-w-sm w-full overflow-hidden">
+            <div className="p-4">
+              <h3 className="text-lg font-semibold mb-2">
+                Confirm Rejection
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to reject "{confirmAction.title}"?
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-4 py-3 bg-muted/30 border-t">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="btn-ios-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (confirmAction.type === 'reject_task') {
+                    executeRejectTask(confirmAction.id);
+                  } else {
+                    executeRejectFollowUp(confirmAction.id);
+                  }
+                }}
+                className="px-4 py-2.5 rounded-xl font-medium bg-destructive text-destructive-foreground active:scale-[0.97]"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast with Undo */}
       {toast && (
-        <div className="fixed bottom-4 right-4 z-50">
-          <div className={`rounded-lg px-4 py-2 shadow-lg text-sm ${
-            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        <div className="fixed bottom-24 md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto z-50">
+          <div className={`rounded-xl px-4 py-3 shadow-lg text-sm flex items-center gap-3 ${
+            toast.type === 'success' ? 'bg-primary text-primary-foreground' : 'bg-destructive text-destructive-foreground'
           }`}>
-            {toast.message}
+            <span>{toast.message}</span>
+            {toast.action && (
+              <button
+                onClick={() => {
+                  toast.action?.onClick();
+                }}
+                className="px-2 py-1 text-xs font-medium bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+              >
+                {toast.action.label}
+              </button>
+            )}
           </div>
         </div>
       )}

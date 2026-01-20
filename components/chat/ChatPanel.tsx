@@ -59,10 +59,10 @@ export default function ChatPanel({
   const [error, setError] = useState<string | null>(null);
   const [currentConversationId, setCurrentConversationId] = useState<string | undefined>(conversationId);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const generateId = () => `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-  // Load conversation messages when conversationId changes
   useEffect(() => {
     if (conversationId !== currentConversationId) {
       setCurrentConversationId(conversationId);
@@ -70,7 +70,6 @@ export default function ChatPanel({
       if (conversationId) {
         loadConversation(conversationId);
       } else {
-        // New conversation, clear messages
         setMessages([]);
       }
     }
@@ -83,7 +82,6 @@ export default function ChatPanel({
       const data = await response.json();
 
       if (data.success && data.messages) {
-        // Convert DB messages to UI messages
         const uiMessages: Message[] = data.messages.map((m: {
           id: string;
           role: 'user' | 'assistant';
@@ -137,7 +135,6 @@ export default function ChatPanel({
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim()) return;
 
-    // Add user message optimistically
     const userMessage: Message = {
       id: generateId(),
       role: 'user',
@@ -165,7 +162,6 @@ export default function ChatPanel({
         throw new Error(data.error || 'Failed to get response');
       }
 
-      // If a new conversation was created, notify parent
       if (data.conversationId && data.conversationId !== currentConversationId) {
         setCurrentConversationId(data.conversationId);
         if (onConversationCreated) {
@@ -173,7 +169,6 @@ export default function ChatPanel({
         }
       }
 
-      // Add assistant message
       const assistantMessage: Message = {
         id: data.messageId || generateId(),
         role: 'assistant',
@@ -191,7 +186,6 @@ export default function ChatPanel({
       console.error('Chat error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
 
-      // Add error message
       const errorMessage: Message = {
         id: generateId(),
         role: 'assistant',
@@ -207,20 +201,27 @@ export default function ChatPanel({
     }
   }, [currentConversationId, onConversationCreated]);
 
-  const handleApproveAction = useCallback(async (messageId: string) => {
+  const handleApproveAction = useCallback(async (messageId: string, editedDraft?: { subject?: string; body?: string }) => {
     const message = messages.find((m) => m.id === messageId);
     if (!message?.action) return;
 
-    setIsLoading(true);
+    setActionLoadingId(messageId);
 
     try {
-      // Call approval endpoint
+      const actionData = { ...message.action.data };
+      if (editedDraft?.subject) {
+        actionData.subject = editedDraft.subject;
+      }
+      if (editedDraft?.body) {
+        actionData.body = editedDraft.body;
+      }
+
       const response = await fetch('/api/chat/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           actionType: message.action.type,
-          actionData: message.action.data,
+          actionData,
           messageId,
           conversationId: currentConversationId,
         }),
@@ -232,7 +233,6 @@ export default function ChatPanel({
         throw new Error(data.error || 'Action failed');
       }
 
-      // Add confirmation message
       let confirmContent = '';
       if (message.action.type === 'send_email') {
         confirmContent = `Email sent successfully to ${message.action.data.recipient_email || 'the recipient'}.`;
@@ -251,7 +251,6 @@ export default function ChatPanel({
         confidence: 'high',
       };
 
-      // Update the original message to remove action buttons
       setMessages((prev) =>
         prev.map((m) =>
           m.id === messageId
@@ -260,7 +259,6 @@ export default function ChatPanel({
         ).concat(confirmMessage)
       );
 
-      // Call external handler if provided
       if (onSendEmail && message.action.type === 'send_email') {
         await onSendEmail(message.action.data);
       }
@@ -278,30 +276,15 @@ export default function ChatPanel({
 
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
-      setIsLoading(false);
+      setActionLoadingId(null);
     }
   }, [messages, currentConversationId, onSendEmail]);
 
-  const handleEditAction = useCallback((messageId: string) => {
-    const message = messages.find((m) => m.id === messageId);
-    if (!message?.action) return;
-
-    // For now, just add a note that editing will be available
-    // In a full implementation, this would open an edit modal
-    const editMessage: Message = {
-      id: generateId(),
-      role: 'assistant',
-      content: 'Editing is not yet available. Please provide instructions for how you\'d like me to modify the draft.',
-      timestamp: new Date(),
-      type: 'info',
-      confidence: 'medium',
-    };
-
-    setMessages((prev) => [...prev, editMessage]);
-  }, [messages]);
+  const handleEditAction = useCallback(() => {
+    // DraftPreview handles editing internally
+  }, []);
 
   const handleCancelAction = useCallback(async (messageId: string) => {
-    // Update the action status locally
     setMessages((prev) =>
       prev.map((m) =>
         m.id === messageId
@@ -310,7 +293,6 @@ export default function ChatPanel({
       )
     );
 
-    // Add cancellation confirmation
     const cancelMessage: Message = {
       id: generateId(),
       role: 'assistant',
@@ -325,36 +307,35 @@ export default function ChatPanel({
 
   if (isLoadingConversation) {
     return (
-      <div className={`flex flex-col h-full bg-white items-center justify-center ${className}`}>
+      <div className={`flex flex-col h-full bg-background items-center justify-center ${className}`}>
         <div className="animate-pulse space-y-3 w-64">
-          <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-          <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+          <div className="h-4 bg-muted rounded-full w-3/4"></div>
+          <div className="h-4 bg-muted rounded-full w-1/2"></div>
+          <div className="h-4 bg-muted rounded-full w-2/3"></div>
         </div>
-        <p className="text-sm text-gray-500 mt-4">Loading conversation...</p>
+        <p className="text-sm text-muted-foreground mt-4">Loading conversation...</p>
       </div>
     );
   }
 
   return (
-    <div className={`flex flex-col h-full bg-white ${className}`}>
-      {/* Messages */}
+    <div className={`flex flex-col h-full bg-background ${className}`}>
       <MessageList
         messages={messages}
         isLoading={isLoading}
         onApproveAction={handleApproveAction}
         onEditAction={handleEditAction}
         onCancelAction={handleCancelAction}
+        onSuggestionClick={sendMessage}
+        actionLoadingId={actionLoadingId}
       />
 
-      {/* Error display */}
       {error && (
-        <div className="px-4 py-2 bg-red-50 border-t border-red-100">
-          <p className="text-sm text-red-600">{error}</p>
+        <div className="px-4 py-2 bg-destructive/10 border-t border-destructive/20">
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
-      {/* Input */}
       <MessageInput
         onSend={sendMessage}
         disabled={isLoading}

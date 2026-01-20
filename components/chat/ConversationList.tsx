@@ -1,7 +1,19 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Plus, Search, Archive, Trash2, X } from 'lucide-react';
 import type { ConversationWithPreview } from '@/types/database';
+
+type Toast = {
+  message: string;
+  type: 'success' | 'error';
+  action?: { label: string; onClick: () => void };
+};
+
+type PendingDelete = {
+  conversation: ConversationWithPreview;
+  timeoutId: NodeJS.Timeout;
+};
 
 interface ConversationListProps {
   currentConversationId?: string;
@@ -18,17 +30,15 @@ export default function ConversationList({
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const pendingDeleteRef = useRef<PendingDelete | null>(null);
 
   const fetchConversations = useCallback(async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
-      if (searchQuery) {
-        params.set('search', searchQuery);
-      }
-      if (showArchived) {
-        params.set('includeArchived', 'true');
-      }
+      if (searchQuery) params.set('search', searchQuery);
+      if (showArchived) params.set('includeArchived', 'true');
 
       const response = await fetch(`/api/conversations?${params.toString()}`);
       const data = await response.json();
@@ -61,22 +71,51 @@ export default function ConversationList({
     }
   };
 
+  const showToast = (message: string, type: 'success' | 'error', action?: { label: string; onClick: () => void }) => {
+    setToast({ message, type, action });
+    setTimeout(() => setToast(null), action ? 5000 : 3000);
+  };
+
   const handleDelete = async (e: React.MouseEvent, conversationId: string) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this conversation? This cannot be undone.')) {
-      return;
+    if (!window.confirm('Delete this conversation? This cannot be undone.')) return;
+
+    const conversation = conversations.find((c) => c.id === conversationId);
+    if (!conversation) return;
+
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    if (conversationId === currentConversationId) {
+      onNewConversation();
     }
-    try {
-      await fetch(`/api/conversations/${conversationId}`, {
-        method: 'DELETE',
-      });
-      fetchConversations();
-      if (conversationId === currentConversationId) {
-        onNewConversation();
+
+    const timeoutId = setTimeout(async () => {
+      pendingDeleteRef.current = null;
+      try {
+        await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' });
+      } catch (error) {
+        console.error('Error deleting conversation:', error);
+        setConversations((prev) => [conversation, ...prev].sort((a, b) =>
+          new Date(b.last_message_at || b.created_at).getTime() - new Date(a.last_message_at || a.created_at).getTime()
+        ));
+        showToast('Failed to delete conversation', 'error');
       }
-    } catch (error) {
-      console.error('Error deleting conversation:', error);
-    }
+    }, 5000);
+
+    pendingDeleteRef.current = { conversation, timeoutId };
+    showToast('Conversation deleted', 'success', {
+      label: 'Undo',
+      onClick: () => undoDelete(conversationId, conversation, timeoutId),
+    });
+  };
+
+  const undoDelete = (conversationId: string, conversation: ConversationWithPreview, timeoutId: NodeJS.Timeout) => {
+    clearTimeout(timeoutId);
+    pendingDeleteRef.current = null;
+    setToast(null);
+    setConversations((prev) => [conversation, ...prev].sort((a, b) =>
+      new Date(b.last_message_at || b.created_at).getTime() - new Date(a.last_message_at || a.created_at).getTime()
+    ));
+    showToast('Conversation restored', 'success');
   };
 
   const formatDate = (dateString: string | null) => {
@@ -87,20 +126,13 @@ export default function ConversationList({
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
     if (days === 0) {
-      return date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      });
+      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
     } else if (days === 1) {
       return 'Yesterday';
     } else if (days < 7) {
       return date.toLocaleDateString('en-US', { weekday: 'short' });
     } else {
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
   };
 
@@ -111,136 +143,108 @@ export default function ConversationList({
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 border-r border-gray-200">
+    <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <div className="p-3 border-b border-gray-200 bg-white">
+      <div className="p-4 border-b">
         <button
           onClick={onNewConversation}
-          className="w-full px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+          className="w-full btn-ios-primary flex items-center justify-center gap-2"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+          <Plus className="w-4 h-4" />
           New Conversation
         </button>
       </div>
 
       {/* Search */}
-      <div className="p-3 border-b border-gray-200">
+      <div className="p-4 border-b space-y-3">
         <div className="relative">
-          <svg
-            className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search conversations..."
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="input-ios pl-10"
           />
         </div>
-        <div className="mt-2 flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => setShowArchived(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            Show archived
-          </label>
-        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="rounded border-border text-primary focus:ring-primary/20"
+          />
+          Show archived
+        </label>
       </div>
 
       {/* Conversation List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto scrollbar-hide">
         {isLoading ? (
-          <div className="p-4 text-center text-gray-500">
-            <div className="animate-pulse space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-16 bg-gray-200 rounded-lg"></div>
-              ))}
-            </div>
+          <div className="p-4 space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-16 bg-muted rounded-xl animate-pulse"></div>
+            ))}
           </div>
         ) : conversations.length === 0 ? (
-          <div className="p-4 text-center text-gray-500 text-sm">
+          <div className="p-8 text-center text-muted-foreground text-sm">
             {searchQuery ? 'No conversations found' : 'No conversations yet'}
           </div>
         ) : (
-          <div className="divide-y divide-gray-200">
+          <div className="p-2 space-y-1">
             {conversations.map((conversation) => (
               <div
                 key={conversation.id}
                 onClick={() => onSelectConversation(conversation.id)}
-                className={`p-3 cursor-pointer hover:bg-gray-100 transition-colors group ${
-                  conversation.id === currentConversationId
-                    ? 'bg-blue-50 border-l-2 border-blue-600'
-                    : ''
-                } ${conversation.is_archived ? 'opacity-60' : ''}`}
+                className={`
+                  group relative rounded-xl p-3 cursor-pointer transition-all
+                  ${conversation.id === currentConversationId
+                    ? 'bg-primary/10'
+                    : 'hover:bg-muted active:bg-muted/80'
+                  }
+                  ${conversation.is_archived ? 'opacity-60' : ''}
+                `}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-medium text-gray-900 truncate">
+                      <h3 className={`text-sm font-medium truncate ${
+                        conversation.id === currentConversationId ? 'text-primary' : ''
+                      }`}>
                         {conversation.title || 'Untitled'}
                       </h3>
                       {conversation.is_archived && (
-                        <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded">
+                        <span className="text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded-full">
                           Archived
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 truncate mt-0.5">
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">
                       {truncateText(conversation.last_user_message)}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                    <span className="text-xs text-gray-400">
+                    <span className="text-[10px] text-muted-foreground">
                       {formatDate(conversation.last_message_at)}
                     </span>
-                    {conversation.message_count > 0 && (
-                      <span className="text-xs text-gray-400">
-                        {conversation.message_count} msg{conversation.message_count !== 1 ? 's' : ''}
-                      </span>
-                    )}
                   </div>
                 </div>
 
-                {/* Action buttons (show on hover) */}
-                <div className="hidden group-hover:flex items-center gap-1 mt-2">
+                {/* Action buttons */}
+                <div className="hidden group-hover:flex absolute right-2 top-1/2 -translate-y-1/2 items-center gap-1 bg-card rounded-lg shadow-sm border p-1">
                   <button
                     onClick={(e) => handleArchive(e, conversation.id, conversation.is_archived)}
-                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
                     title={conversation.is_archived ? 'Unarchive' : 'Archive'}
                   >
-                    {conversation.is_archived ? (
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                      </svg>
-                    ) : (
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                      </svg>
-                    )}
+                    <Archive className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={(e) => handleDelete(e, conversation.id)}
-                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
                     title="Delete"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -250,11 +254,34 @@ export default function ConversationList({
       </div>
 
       {/* Footer */}
-      <div className="p-3 border-t border-gray-200 bg-white">
-        <p className="text-xs text-gray-500 text-center">
+      <div className="p-3 border-t text-center">
+        <p className="text-xs text-muted-foreground">
           {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
         </p>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-20 md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto z-50">
+          <div className={`
+            rounded-xl px-4 py-3 shadow-lg text-sm flex items-center gap-3
+            ${toast.type === 'success' ? 'bg-primary text-primary-foreground' : 'bg-destructive text-destructive-foreground'}
+          `}>
+            <span>{toast.message}</span>
+            {toast.action && (
+              <button
+                onClick={toast.action.onClick}
+                className="px-2 py-1 text-xs font-medium bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+              >
+                {toast.action.label}
+              </button>
+            )}
+            <button onClick={() => setToast(null)} className="p-1 hover:bg-white/20 rounded-lg">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

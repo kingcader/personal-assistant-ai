@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Plus, ChevronDown, Check, X } from 'lucide-react';
 import { getTasksByOwner } from '@/lib/supabase/task-queries';
 import CreateTaskModal from '@/components/calendar/CreateTaskModal';
 
@@ -71,7 +72,6 @@ export default function TasksPage() {
 
   async function updateTaskStatus(taskId: string, newStatus: Task['status']) {
     if (processingIds.has(taskId)) return;
-
     setProcessingIds((prev) => new Set(prev).add(taskId));
 
     try {
@@ -87,10 +87,7 @@ export default function TasksPage() {
       }
 
       const { task: updatedTask } = await response.json();
-
-      setTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, ...updatedTask } : t))
-      );
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updatedTask } : t)));
 
       const statusLabel = newStatus === 'in_progress' ? 'started' : newStatus;
       showToast(`Task ${statusLabel}`, 'success');
@@ -128,7 +125,6 @@ export default function TasksPage() {
 
   async function saveTaskEdits() {
     if (!editingTask) return;
-
     setIsSaving(true);
 
     try {
@@ -149,11 +145,7 @@ export default function TasksPage() {
       }
 
       const { task: updatedTask } = await response.json();
-
-      setTasks((prev) =>
-        prev.map((t) => (t.id === editingTask.id ? { ...t, ...updatedTask } : t))
-      );
-
+      setTasks((prev) => prev.map((t) => (t.id === editingTask.id ? { ...t, ...updatedTask } : t)));
       showToast('Task updated successfully', 'success');
       closeEditModal();
     } catch (error) {
@@ -166,13 +158,10 @@ export default function TasksPage() {
 
   function getDateGroup(dateString: string | null): string {
     if (!dateString) return 'no_date';
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const taskDate = new Date(dateString + 'T12:00:00');
     taskDate.setHours(0, 0, 0, 0);
-
     const diffDays = Math.floor((taskDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
     if (diffDays < 0) return 'overdue';
@@ -184,12 +173,7 @@ export default function TasksPage() {
 
   function groupTasksByDate(tasks: Task[]): DateGroup[] {
     const groups: Record<string, Task[]> = {
-      overdue: [],
-      today: [],
-      tomorrow: [],
-      this_week: [],
-      later: [],
-      no_date: [],
+      overdue: [], today: [], tomorrow: [], this_week: [], later: [], no_date: [],
     };
 
     tasks.forEach((task) => {
@@ -197,50 +181,34 @@ export default function TasksPage() {
       groups[group].push(task);
     });
 
-    // Sort tasks within each group by priority
     const priorityOrder = { high: 0, med: 1, low: 2 };
     Object.values(groups).forEach((group) => {
       group.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
     });
 
     const groupLabels: Record<string, string> = {
-      overdue: 'Overdue',
-      today: 'Today',
-      tomorrow: 'Tomorrow',
-      this_week: 'This Week',
-      later: 'Later',
-      no_date: 'No Due Date',
+      overdue: 'Overdue', today: 'Today', tomorrow: 'Tomorrow',
+      this_week: 'This Week', later: 'Later', no_date: 'No Due Date',
     };
 
     return Object.entries(groups)
       .filter(([, tasks]) => tasks.length > 0)
-      .map(([key, tasks]) => ({
-        key,
-        label: groupLabels[key],
-        tasks,
-      }));
+      .map(([key, tasks]) => ({ key, label: groupLabels[key], tasks }));
   }
 
-  function getPriorityDot(priority: string) {
+  function getPriorityColor(priority: string) {
     switch (priority) {
-      case 'high':
-        return 'bg-red-500';
-      case 'med':
-        return 'bg-yellow-500';
-      case 'low':
-        return 'bg-blue-400';
-      default:
-        return 'bg-gray-400';
+      case 'high': return 'bg-destructive';
+      case 'med': return 'bg-warning';
+      case 'low': return 'bg-primary';
+      default: return 'bg-muted-foreground';
     }
   }
 
   function formatDueDate(dateString: string | null) {
     if (!dateString) return null;
     const date = new Date(dateString + 'T12:00:00');
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    });
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
   function isOverdue(dateString: string | null): boolean {
@@ -254,8 +222,12 @@ export default function TasksPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-500">Loading tasks...</div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-pulse space-y-3 w-64">
+          <div className="h-4 bg-muted rounded-full w-3/4"></div>
+          <div className="h-4 bg-muted rounded-full w-1/2"></div>
+          <div className="h-4 bg-muted rounded-full w-2/3"></div>
+        </div>
       </div>
     );
   }
@@ -264,35 +236,33 @@ export default function TasksPage() {
   const totalTasks = tasks.length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background pb-20 md:pb-0">
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Tasks</h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <h1 className="text-2xl font-semibold">Tasks</h1>
+            <p className="text-sm text-muted-foreground mt-1">
               {totalTasks} {totalTasks === 1 ? 'task' : 'tasks'}
             </p>
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="btn-ios-primary flex items-center gap-1.5"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+            <Plus className="w-4 h-4" />
             New Task
           </button>
         </div>
 
         {/* Filter */}
         <div className="mb-4 flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
             <input
               type="checkbox"
               checked={includeCompleted}
               onChange={(e) => setIncludeCompleted(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="rounded border-border text-primary focus:ring-primary/20"
             />
             Show completed
           </label>
@@ -301,7 +271,7 @@ export default function TasksPage() {
         {/* Task List */}
         {groupedTasks.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-500">
+            <p className="text-muted-foreground">
               {includeCompleted ? 'No tasks found' : 'All caught up!'}
             </p>
           </div>
@@ -309,20 +279,16 @@ export default function TasksPage() {
           <div className="space-y-6">
             {groupedTasks.map((group) => (
               <div key={group.key}>
-                {/* Group Header */}
                 <div className="flex items-center gap-2 mb-2">
                   <h2 className={`text-sm font-medium ${
-                    group.key === 'overdue' ? 'text-red-600' : 'text-gray-500'
+                    group.key === 'overdue' ? 'text-destructive' : 'text-muted-foreground'
                   }`}>
                     {group.label}
                   </h2>
-                  <span className="text-xs text-gray-400">
-                    {group.tasks.length}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{group.tasks.length}</span>
                 </div>
 
-                {/* Task Rows */}
-                <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                <div className="card-ios p-0 divide-y divide-border">
                   {group.tasks.map((task) => {
                     const isExpanded = expandedId === task.id;
                     const isProcessing = processingIds.has(task.id);
@@ -330,110 +296,77 @@ export default function TasksPage() {
 
                     return (
                       <div key={task.id}>
-                        {/* Compact Row */}
                         <div
-                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${
+                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted ${
                             task.status === 'completed' ? 'opacity-60' : ''
                           }`}
                           onClick={() => setExpandedId(isExpanded ? null : task.id)}
                         >
-                          {/* Checkbox */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (task.status === 'completed') {
-                                updateTaskStatus(task.id, 'todo');
-                              } else {
-                                updateTaskStatus(task.id, 'completed');
-                              }
+                              updateTaskStatus(task.id, task.status === 'completed' ? 'todo' : 'completed');
                             }}
                             disabled={isProcessing}
-                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
                               task.status === 'completed'
-                                ? 'bg-green-500 border-green-500 text-white'
-                                : 'border-gray-300 hover:border-gray-400'
+                                ? 'bg-success border-success text-success-foreground'
+                                : 'border-border hover:border-primary'
                             } ${isProcessing ? 'opacity-50' : ''}`}
                           >
-                            {task.status === 'completed' && (
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
+                            {task.status === 'completed' && <Check className="w-3.5 h-3.5" />}
                           </button>
 
-                          {/* Priority Dot */}
-                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getPriorityDot(task.priority)}`} />
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getPriorityColor(task.priority)}`} />
 
-                          {/* Title */}
-                          <span className={`flex-1 text-sm text-gray-900 truncate ${
-                            task.status === 'completed' ? 'line-through text-gray-500' : ''
+                          <span className={`flex-1 text-sm truncate ${
+                            task.status === 'completed' ? 'line-through text-muted-foreground' : ''
                           }`}>
                             {task.title}
                           </span>
 
-                          {/* Status Badge (only for in_progress) */}
                           {task.status === 'in_progress' && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary flex-shrink-0">
                               In Progress
                             </span>
                           )}
 
-                          {/* Due Date */}
                           {task.due_date && (
                             <span className={`text-xs flex-shrink-0 ${
-                              overdue && task.status !== 'completed'
-                                ? 'text-red-600 font-medium'
-                                : 'text-gray-400'
+                              overdue && task.status !== 'completed' ? 'text-destructive font-medium' : 'text-muted-foreground'
                             }`}>
                               {formatDueDate(task.due_date)}
                             </span>
                           )}
 
-                          {/* Expand Chevron */}
-                          <svg
-                            className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${
-                              isExpanded ? 'rotate-180' : ''
-                            }`}
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
+                          <ChevronDown className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform ${
+                            isExpanded ? 'rotate-180' : ''
+                          }`} />
                         </div>
 
-                        {/* Expanded Details */}
                         {isExpanded && (
-                          <div className="px-4 pb-4 pt-1 bg-gray-50 border-t border-gray-100">
-                            {/* Description */}
+                          <div className="px-4 pb-4 pt-1 bg-muted/30 border-t">
                             {task.description && (
-                              <p className="text-sm text-gray-600 mb-3 ml-8">
-                                {task.description}
-                              </p>
+                              <p className="text-sm text-muted-foreground mb-3 ml-9">{task.description}</p>
                             )}
 
-                            {/* Meta Info */}
-                            <div className="text-xs text-gray-500 mb-3 ml-8 space-y-1">
-                              <div>
-                                <span className="font-medium">From email:</span>{' '}
-                                {task.email.subject}
-                              </div>
+                            <div className="text-xs text-muted-foreground mb-3 ml-9 space-y-1">
+                              <div><span className="font-medium">From email:</span> {task.email.subject}</div>
                               <div>
                                 <span className="font-medium">Priority:</span>{' '}
                                 <span className={
-                                  task.priority === 'high' ? 'text-red-600' :
-                                  task.priority === 'med' ? 'text-yellow-600' : 'text-blue-600'
+                                  task.priority === 'high' ? 'text-destructive' :
+                                  task.priority === 'med' ? 'text-warning' : 'text-primary'
                                 }>
                                   {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
                                 </span>
                               </div>
                             </div>
 
-                            {/* Actions */}
-                            <div className="flex gap-2 ml-8">
+                            <div className="flex flex-wrap gap-2 ml-9">
                               <button
                                 onClick={() => openEditModal(task)}
-                                className="text-xs px-3 py-1.5 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                className="btn-ios-secondary text-xs py-1.5"
                               >
                                 Edit
                               </button>
@@ -441,7 +374,7 @@ export default function TasksPage() {
                                 <button
                                   onClick={() => updateTaskStatus(task.id, 'in_progress')}
                                   disabled={isProcessing}
-                                  className="text-xs px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                                  className="btn-ios-primary text-xs py-1.5"
                                 >
                                   Start
                                 </button>
@@ -450,7 +383,7 @@ export default function TasksPage() {
                                 <button
                                   onClick={() => updateTaskStatus(task.id, 'todo')}
                                   disabled={isProcessing}
-                                  className="text-xs px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                                  className="btn-ios-secondary text-xs py-1.5"
                                 >
                                   Pause
                                 </button>
@@ -459,7 +392,7 @@ export default function TasksPage() {
                                 <button
                                   onClick={() => updateTaskStatus(task.id, 'completed')}
                                   disabled={isProcessing}
-                                  className="text-xs px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                                  className="text-xs px-4 py-1.5 rounded-xl font-medium bg-success text-success-foreground active:scale-[0.97]"
                                 >
                                   Complete
                                 </button>
@@ -468,7 +401,7 @@ export default function TasksPage() {
                                 <button
                                   onClick={() => updateTaskStatus(task.id, 'todo')}
                                   disabled={isProcessing}
-                                  className="text-xs px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                                  className="btn-ios-secondary text-xs py-1.5"
                                 >
                                   Reopen
                                 </button>
@@ -484,75 +417,58 @@ export default function TasksPage() {
             ))}
           </div>
         )}
-
-        {/* Navigation */}
-        <div className="mt-8 pt-4 border-t border-gray-200 flex gap-4">
-          <a href="/" className="text-sm text-blue-600 hover:text-blue-800">
-            ← Home
-          </a>
-          <a href="/approvals" className="text-sm text-blue-600 hover:text-blue-800">
-            Approvals →
-          </a>
-        </div>
       </div>
 
       {/* Edit Modal */}
       {editingTask && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Edit Task</h2>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="card-ios max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Edit Task</h2>
+              <button onClick={closeEditModal} className="p-2 -mr-2 rounded-xl hover:bg-muted">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
             <div className="space-y-4">
-              {/* Title */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Title
-                </label>
+                <label className="block text-sm font-medium mb-1">Title</label>
                 <input
                   type="text"
                   value={editingTask.title}
                   onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input-ios"
                   placeholder="Task title"
                 />
               </div>
 
-              {/* Description */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
+                <label className="block text-sm font-medium mb-1">Description</label>
                 <textarea
                   value={editingTask.description}
                   onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input-ios min-h-[80px] resize-none"
                   placeholder="Task description"
                   rows={3}
                 />
               </div>
 
-              {/* Due Date */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Due Date
-                </label>
+                <label className="block text-sm font-medium mb-1">Due Date</label>
                 <input
                   type="date"
                   value={editingTask.due_date}
                   onChange={(e) => setEditingTask({ ...editingTask, due_date: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input-ios"
                 />
               </div>
 
-              {/* Priority */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Priority
-                </label>
+                <label className="block text-sm font-medium mb-1">Priority</label>
                 <select
                   value={editingTask.priority}
                   onChange={(e) => setEditingTask({ ...editingTask, priority: e.target.value as 'low' | 'med' | 'high' })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input-ios"
                 >
                   <option value="low">Low</option>
                   <option value="med">Medium</option>
@@ -561,19 +477,18 @@ export default function TasksPage() {
               </div>
             </div>
 
-            {/* Actions */}
             <div className="flex gap-3 mt-6">
               <button
                 onClick={closeEditModal}
                 disabled={isSaving}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="flex-1 btn-ios-secondary"
               >
                 Cancel
               </button>
               <button
                 onClick={saveTaskEdits}
                 disabled={isSaving || !editingTask.title.trim()}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="flex-1 btn-ios-primary"
               >
                 {isSaving ? 'Saving...' : 'Save'}
               </button>
@@ -584,16 +499,15 @@ export default function TasksPage() {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-4 right-4 z-50">
-          <div className={`rounded-lg px-4 py-2 shadow-lg text-sm ${
-            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        <div className="fixed bottom-24 md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto z-50">
+          <div className={`rounded-xl px-4 py-3 shadow-lg text-sm ${
+            toast.type === 'success' ? 'bg-primary text-primary-foreground' : 'bg-destructive text-destructive-foreground'
           }`}>
             {toast.message}
           </div>
         </div>
       )}
 
-      {/* Create Task Modal */}
       <CreateTaskModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}

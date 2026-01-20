@@ -599,8 +599,9 @@ export interface ScheduledTask {
   priority: 'low' | 'med' | 'high';
   status: 'todo' | 'in_progress' | 'completed' | 'cancelled';
   scheduled_start: string;
-  scheduled_end: string;
+  scheduled_end: string | null;
   is_scheduled: boolean;
+  is_all_day: boolean;
   email_subject: string | null;
 }
 
@@ -634,6 +635,7 @@ export async function getScheduledTasks(
       scheduled_start,
       scheduled_end,
       is_scheduled,
+      is_all_day,
       emails (subject)
     `)
     .eq('is_scheduled', true)
@@ -653,6 +655,7 @@ export async function getScheduledTasks(
 
   return (data || []).map((t: any) => ({
     ...t,
+    is_all_day: t.is_all_day || false,
     email_subject: t.emails?.subject || null,
     emails: undefined,
   }));
@@ -703,6 +706,7 @@ export async function scheduleTask(
       scheduled_start: scheduledStart.toISOString(),
       scheduled_end: scheduledEnd.toISOString(),
       is_scheduled: true,
+      is_all_day: false,
     } as never)
     .eq('id', taskId)
     .select(`
@@ -715,6 +719,7 @@ export async function scheduleTask(
       scheduled_start,
       scheduled_end,
       is_scheduled,
+      is_all_day,
       emails (subject)
     `)
     .single();
@@ -733,6 +738,57 @@ export async function scheduleTask(
     scheduled_start: taskData.scheduled_start,
     scheduled_end: taskData.scheduled_end,
     is_scheduled: taskData.is_scheduled,
+    is_all_day: taskData.is_all_day || false,
+    email_subject: taskData.emails?.subject || null,
+  } as ScheduledTask;
+}
+
+/**
+ * Schedule a task as all-day (no specific times)
+ */
+export async function scheduleTaskAllDay(
+  taskId: string,
+  scheduledDate: Date
+): Promise<ScheduledTask> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .update({
+      scheduled_start: scheduledDate.toISOString(),
+      scheduled_end: null,
+      is_scheduled: true,
+      is_all_day: true,
+    } as never)
+    .eq('id', taskId)
+    .select(`
+      id,
+      title,
+      description,
+      due_date,
+      priority,
+      status,
+      scheduled_start,
+      scheduled_end,
+      is_scheduled,
+      is_all_day,
+      emails (subject)
+    `)
+    .single();
+
+  if (error) throw error;
+  if (!data) throw new Error('Task not found');
+
+  const taskData = data as any;
+  return {
+    id: taskData.id,
+    title: taskData.title,
+    description: taskData.description,
+    due_date: taskData.due_date,
+    priority: taskData.priority,
+    status: taskData.status,
+    scheduled_start: taskData.scheduled_start,
+    scheduled_end: taskData.scheduled_end,
+    is_scheduled: taskData.is_scheduled,
+    is_all_day: taskData.is_all_day || false,
     email_subject: taskData.emails?.subject || null,
   } as ScheduledTask;
 }
@@ -747,6 +803,7 @@ export async function unscheduleTask(taskId: string): Promise<void> {
       scheduled_start: null,
       scheduled_end: null,
       is_scheduled: false,
+      is_all_day: false,
     } as never)
     .eq('id', taskId);
 

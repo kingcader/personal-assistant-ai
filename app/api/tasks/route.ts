@@ -82,14 +82,14 @@ export async function POST(request: NextRequest) {
           subject: '[Manual Task]',
           body: 'Placeholder email for manually created tasks',
           received_at: new Date().toISOString(),
-          processed: true,
         } as never)
         .select('id')
         .single<{ id: string }>();
 
       if (emailError || !newEmail) {
+        console.error('Failed to create placeholder email:', emailError);
         return NextResponse.json(
-          { error: 'Failed to create task placeholder' },
+          { error: 'Failed to create task placeholder', details: emailError?.message },
           { status: 500 }
         );
       }

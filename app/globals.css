@@ -4,58 +4,99 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    /* iOS-style Light Mode (Default) */
+    --background: 0 0% 98%; /* Warm white #FAFAFA */
+    --foreground: 215 28% 17%; /* Dark blue-gray */
+    --card: 0 0% 100%; /* Pure white */
+    --card-foreground: 215 28% 17%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --chart-1: 12 76% 61%;
+    --popover-foreground: 215 28% 17%;
+
+    /* iOS Blue accent */
+    --primary: 211 100% 50%; /* #007AFF */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 20% 96%; /* Light gray-blue */
+    --secondary-foreground: 215 28% 17%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 20% 96%;
+    --accent-foreground: 215 28% 17%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 210 20% 91%;
+    --input: 210 20% 96%;
+    --ring: 211 100% 50%;
+
+    /* Chart colors */
+    --chart-1: 211 100% 50%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
+
+    --radius: 0.75rem;
+
+    /* Tab bar specific */
+    --tab-bar-bg: 0 0% 100%;
+    --tab-bar-border: 210 20% 91%;
+    --tab-inactive: 215 16% 47%;
+    --tab-active: 211 100% 50%;
+
+    /* Success/Warning colors */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
   }
 
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-    --chart-1: 220 70% 50%;
+    /* iOS-style Dark Mode */
+    --background: 214 35% 7%; /* Dark blue-gray #0F1419 */
+    --foreground: 210 20% 98%; /* Near white */
+    --card: 214 32% 10%; /* Slightly lighter than bg */
+    --card-foreground: 210 20% 98%;
+    --popover: 214 32% 10%;
+    --popover-foreground: 210 20% 98%;
+
+    /* Bright blue for dark mode */
+    --primary: 211 100% 55%; /* #0A84FF */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 214 32% 14%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 214 32% 14%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 214 32% 14%;
+    --accent-foreground: 210 20% 98%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 17%;
+    --input: 214 32% 14%;
+    --ring: 211 100% 55%;
+
+    /* Chart colors - dark mode */
+    --chart-1: 211 100% 55%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+
+    /* Tab bar specific - dark mode */
+    --tab-bar-bg: 214 32% 10%;
+    --tab-bar-border: 214 32% 17%;
+    --tab-inactive: 215 20% 55%;
+    --tab-active: 211 100% 55%;
+
+    /* Success/Warning - dark mode */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
   }
 }
 
@@ -64,6 +105,147 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* iOS-style component utilities */
+@layer components {
+  /* iOS-style buttons */
+  .btn-ios {
+    @apply rounded-xl px-4 py-2.5 font-medium transition-all duration-200;
+    @apply active:scale-[0.97] active:opacity-80;
+  }
+
+  .btn-ios-primary {
+    @apply btn-ios bg-primary text-primary-foreground;
+    @apply hover:brightness-110;
+  }
+
+  .btn-ios-secondary {
+    @apply btn-ios bg-secondary text-secondary-foreground;
+    @apply hover:bg-muted;
+  }
+
+  /* iOS-style inputs */
+  .input-ios {
+    @apply w-full rounded-xl border-0 bg-secondary px-4 py-3;
+    @apply placeholder:text-muted-foreground;
+    @apply focus:outline-none focus:ring-2 focus:ring-primary/20;
+    @apply transition-all duration-200;
+  }
+
+  /* iOS-style cards */
+  .card-ios {
+    @apply rounded-2xl bg-card p-4;
+    @apply shadow-sm shadow-black/5;
+  }
+
+  /* iOS-style list items */
+  .list-item-ios {
+    @apply flex items-center gap-3 rounded-xl px-4 py-3;
+    @apply transition-colors duration-200;
+    @apply active:bg-muted;
+  }
+
+  /* Glass morphism effect */
+  .glass {
+    @apply bg-background/80 backdrop-blur-xl;
+  }
+
+  /* Bottom safe area padding for mobile */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* Tab bar styles */
+  .tab-bar {
+    @apply fixed bottom-0 left-0 right-0 z-50;
+    @apply border-t bg-card/95 backdrop-blur-xl;
+    @apply pb-safe;
+  }
+
+  .tab-item {
+    @apply flex flex-1 flex-col items-center justify-center gap-0.5 py-2;
+    @apply text-muted-foreground transition-colors duration-200;
+  }
+
+  .tab-item.active {
+    @apply text-primary;
+  }
+
+  .tab-icon {
+    @apply h-6 w-6;
+  }
+
+  .tab-label {
+    @apply text-[10px] font-medium;
+  }
+
+  /* Sidebar styles */
+  .sidebar {
+    @apply fixed left-0 top-0 z-40 h-full;
+    @apply border-r bg-card transition-all duration-300;
+  }
+
+  .sidebar-collapsed {
+    @apply w-16;
+  }
+
+  .sidebar-expanded {
+    @apply w-64;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 mx-2;
+    @apply text-muted-foreground transition-all duration-200;
+    @apply hover:bg-muted hover:text-foreground;
+  }
+
+  .sidebar-item.active {
+    @apply bg-primary/10 text-primary;
+  }
+
+  /* Badge styles */
+  .badge-ios {
+    @apply inline-flex items-center justify-center;
+    @apply min-w-[18px] h-[18px] px-1.5 rounded-full;
+    @apply text-[11px] font-semibold;
+    @apply bg-destructive text-destructive-foreground;
+  }
+
+  /* Page transitions */
+  .page-transition {
+    @apply transition-opacity duration-200;
+  }
+
+  /* Pull to refresh indicator area */
+  .pull-refresh-area {
+    @apply min-h-screen;
+  }
+}
+
+/* Hide scrollbar but keep functionality */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Touch action utilities */
+  .touch-pan-y {
+    touch-action: pan-y;
+  }
+
+  .touch-pan-x {
+    touch-action: pan-x;
   }
 }

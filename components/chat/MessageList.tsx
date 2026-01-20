@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { MessageSquare, Sparkles } from 'lucide-react';
 import ChatMessage from './ChatMessage';
 
 interface Citation {
@@ -43,10 +44,19 @@ export interface Message {
 interface MessageListProps {
   messages: Message[];
   isLoading?: boolean;
-  onApproveAction?: (messageId: string) => void;
+  onApproveAction?: (messageId: string, editedDraft?: { subject?: string; body?: string }) => void;
   onEditAction?: (messageId: string) => void;
   onCancelAction?: (messageId: string) => void;
+  onSuggestionClick?: (message: string) => void;
+  actionLoadingId?: string | null;
 }
+
+const QUICK_ACTIONS = [
+  { label: "What's on my plate today?", icon: "calendar" },
+  { label: "What are the payment terms?", icon: "document" },
+  { label: "Draft a follow-up email", icon: "mail" },
+  { label: "Search my emails", icon: "search" },
+];
 
 export default function MessageList({
   messages,
@@ -54,11 +64,12 @@ export default function MessageList({
   onApproveAction,
   onEditAction,
   onCancelAction,
+  onSuggestionClick,
+  actionLoadingId,
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -67,51 +78,35 @@ export default function MessageList({
 
   if (messages.length === 0 && !isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="text-center max-w-md">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-              />
-            </svg>
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          {/* Logo/Icon */}
+          <div className="w-20 h-20 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/20">
+            <Sparkles className="w-10 h-10 text-primary-foreground" />
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+
+          {/* Welcome text */}
+          <h2 className="text-2xl font-semibold mb-2">
             Hi! I'm your assistant.
           </h2>
-          <p className="text-gray-600 mb-6">
-            I can help you with your documents, tasks, calendar, and communications.
-            Try asking me something!
+          <p className="text-muted-foreground mb-8">
+            I can help with documents, tasks, calendar, and communications.
           </p>
+
+          {/* Quick actions */}
           <div className="space-y-2">
-            <p className="text-sm text-gray-500 font-medium">Try these:</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {[
-                "What's on my plate today?",
-                'What are the payment terms in the contract?',
-                'Write a follow-up to Sarah',
-              ].map((suggestion, idx) => (
-                <button
-                  key={idx}
-                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-full transition-colors"
-                  onClick={() => {
-                    // This would need to be connected to the parent component
-                    // For now, just log it
-                    console.log('Suggestion clicked:', suggestion);
-                  }}
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
+            {QUICK_ACTIONS.map((action, idx) => (
+              <button
+                key={idx}
+                onClick={() => onSuggestionClick?.(action.label)}
+                className="w-full card-ios text-left flex items-center gap-3 hover:bg-muted/50 transition-colors active:scale-[0.98]"
+              >
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <MessageSquare className="w-5 h-5 text-primary" />
+                </div>
+                <span className="text-sm font-medium">{action.label}</span>
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -121,9 +116,9 @@ export default function MessageList({
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto"
+      className="flex-1 overflow-y-auto scrollbar-hide"
     >
-      <div className="divide-y divide-gray-100">
+      <div className="divide-y divide-border/50">
         {messages.map((message) => (
           <ChatMessage
             key={message.id}
@@ -137,7 +132,7 @@ export default function MessageList({
             searchResults={message.searchResults}
             onApproveAction={
               message.action && onApproveAction
-                ? () => onApproveAction(message.id)
+                ? (editedDraft) => onApproveAction(message.id, editedDraft)
                 : undefined
             }
             onEditAction={
@@ -150,6 +145,7 @@ export default function MessageList({
                 ? () => onCancelAction(message.id)
                 : undefined
             }
+            isActionLoading={actionLoadingId === message.id}
           />
         ))}
         {isLoading && (
@@ -160,7 +156,7 @@ export default function MessageList({
           />
         )}
       </div>
-      <div ref={bottomRef} />
+      <div ref={bottomRef} className="h-4" />
     </div>
   );
 }

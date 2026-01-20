@@ -21,6 +21,7 @@ interface CalendarTask {
   scheduled_start?: string | null;
   scheduled_end?: string | null;
   is_scheduled?: boolean;
+  is_all_day?: boolean;
 }
 
 interface CalendarEvent {
@@ -351,6 +352,14 @@ export default function CalendarPage() {
       startDateTime.setHours(hour, 0, 0, 0);
       const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour default
 
+      console.log('[handleScheduleTask] Scheduling task:', {
+        taskId,
+        dayKey,
+        hour,
+        startDateTime: startDateTime.toISOString(),
+        endDateTime: endDateTime.toISOString(),
+      });
+
       const response = await fetch(`/api/tasks/${taskId}/schedule`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -360,7 +369,18 @@ export default function CalendarPage() {
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to schedule task');
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('[handleScheduleTask] API error:', {
+          status: response.status,
+          error: data.error,
+          taskId,
+        });
+        throw new Error(data.error || 'Failed to schedule task');
+      }
+
+      console.log('[handleScheduleTask] Success:', data);
 
       // Remove from unscheduled tasks
       setUnscheduledTasks((prev) => prev.filter((t) => t.id !== taskId));
@@ -368,8 +388,56 @@ export default function CalendarPage() {
       // Reload calendar data to show the scheduled task
       loadCalendarData();
       showToast('Task scheduled', 'success');
-    } catch {
-      showToast('Failed to schedule task', 'error');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to schedule task';
+      console.error('[handleScheduleTask] Error:', err);
+      showToast(errorMessage, 'error');
+    }
+  }, [showToast, loadCalendarData]);
+
+  // Schedule task as all-day
+  const handleScheduleAllDayTask = useCallback(async (
+    taskId: string,
+    dayKey: string
+  ) => {
+    try {
+      console.log('[handleScheduleAllDayTask] Scheduling all-day task:', {
+        taskId,
+        dayKey,
+      });
+
+      const response = await fetch(`/api/tasks/${taskId}/schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          is_all_day: true,
+          date: dayKey,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('[handleScheduleAllDayTask] API error:', {
+          status: response.status,
+          error: data.error,
+          taskId,
+        });
+        throw new Error(data.error || 'Failed to schedule task');
+      }
+
+      console.log('[handleScheduleAllDayTask] Success:', data);
+
+      // Remove from unscheduled tasks
+      setUnscheduledTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+      // Reload calendar data to show the scheduled task
+      loadCalendarData();
+      showToast('Task scheduled as all-day', 'success');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to schedule task';
+      console.error('[handleScheduleAllDayTask] Error:', err);
+      showToast(errorMessage, 'error');
     }
   }, [showToast, loadCalendarData]);
 
@@ -387,13 +455,25 @@ export default function CalendarPage() {
     const activeData = active.data.current;
     const overData = over.data.current;
 
+    // Get task ID from either sidebar (task) or WeekGrid (event) data structure
+    const getTaskId = () => activeData?.task?.id || activeData?.event?.id;
+
     // Dropping a task on a time slot
     if (activeData?.type === 'task' && overData?.type === 'time-slot') {
-      const taskId = activeData.task.id;
+      const taskId = getTaskId();
+      if (!taskId) return;
       const { dayKey, hour } = overData;
       handleScheduleTask(taskId, dayKey, hour);
     }
-  }, [handleScheduleTask]);
+
+    // Dropping a task on an all-day slot
+    if (activeData?.type === 'task' && overData?.type === 'all-day-slot') {
+      const taskId = getTaskId();
+      if (!taskId) return;
+      const { dayKey } = overData;
+      handleScheduleAllDayTask(taskId, dayKey);
+    }
+  }, [handleScheduleTask, handleScheduleAllDayTask]);
 
   // Build calendar days
   const buildCalendarDays = useCallback(() => {
@@ -549,7 +629,21 @@ export default function CalendarPage() {
       tasks
         .filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
         .forEach((task) => {
-          if (task.is_scheduled && task.scheduled_start) {
+          if (task.is_scheduled && task.is_all_day && task.scheduled_start) {
+            // All-day scheduled task
+            const taskDate = new Date(task.scheduled_start);
+            weekEvents.push({
+              id: task.id,
+              type: 'task',
+              title: task.title,
+              startTime: taskDate,
+              allDay: true,
+              priority: task.priority,
+              status: task.status,
+              isScheduled: true,
+            });
+          } else if (task.is_scheduled && task.scheduled_start) {
+            // Timed scheduled task
             weekEvents.push({
               id: task.id,
               type: 'task',
@@ -562,6 +656,7 @@ export default function CalendarPage() {
               isScheduled: true,
             });
           } else if (task.due_date) {
+            // Unscheduled task with due date
             const taskDate = new Date(task.due_date + 'T09:00:00');
             weekEvents.push({
               id: task.id,
@@ -625,8 +720,12 @@ export default function CalendarPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-500">Loading calendar...</div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-pulse space-y-3 w-64">
+          <div className="h-4 bg-muted rounded-full w-3/4"></div>
+          <div className="h-4 bg-muted rounded-full w-1/2"></div>
+          <div className="h-4 bg-muted rounded-full w-2/3"></div>
+        </div>
       </div>
     );
   }
@@ -638,7 +737,7 @@ export default function CalendarPage() {
 
   return (
     <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="min-h-screen bg-gray-50 flex">
+      <div className="min-h-screen bg-background flex pb-20 md:pb-0">
         {/* Sidebar - hidden on mobile */}
         {showSidebar && viewMode === 'week' && (
           <div className="hidden sm:block">
@@ -655,8 +754,8 @@ export default function CalendarPage() {
             {/* Header */}
             <div className="mb-4 sm:mb-6 flex items-start sm:items-center justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">Calendar</h1>
-                <p className="text-xs sm:text-sm text-gray-500 mt-0.5 sm:mt-1">
+                <h1 className="text-xl sm:text-2xl font-semibold">Calendar</h1>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1">
                   {totalEvents} events · {totalTasks} tasks · {totalSuggestions} suggestions
                 </p>
               </div>
@@ -665,7 +764,7 @@ export default function CalendarPage() {
               <div className="flex gap-1.5 sm:gap-2 flex-shrink-0">
                 <button
                   onClick={() => setShowCreateTaskModal(true)}
-                  className="flex items-center justify-center gap-1 sm:gap-1.5 p-2 sm:px-3 sm:py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="btn-ios-primary flex items-center justify-center gap-1 sm:gap-1.5 p-2 sm:px-3 sm:py-2 text-sm"
                   title="Add Task"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -675,7 +774,7 @@ export default function CalendarPage() {
                 </button>
                 <button
                   onClick={() => setShowCreateEventModal(true)}
-                  className="flex items-center justify-center gap-1 sm:gap-1.5 p-2 sm:px-3 sm:py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                  className="btn-ios-secondary flex items-center justify-center gap-1 sm:gap-1.5 p-2 sm:px-3 sm:py-2 text-sm"
                   title="Add Event"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -691,13 +790,13 @@ export default function CalendarPage() {
               {/* Top row: View mode + Week nav */}
               <div className="flex items-center gap-2 flex-wrap">
                 {/* View Mode Toggle */}
-                <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+                <div className="flex items-center gap-0.5 bg-secondary rounded-xl p-0.5">
                   <button
                     onClick={() => handleViewModeChange('list')}
-                    className={`px-2.5 py-1.5 text-sm rounded-md transition-colors ${
+                    className={`px-2.5 py-1.5 text-sm rounded-lg transition-all ${
                       viewMode === 'list'
-                        ? 'bg-white shadow text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900'
+                        ? 'bg-card shadow text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
                     <span className="flex items-center gap-1">
@@ -709,10 +808,10 @@ export default function CalendarPage() {
                   </button>
                   <button
                     onClick={() => handleViewModeChange('week')}
-                    className={`px-2.5 py-1.5 text-sm rounded-md transition-colors ${
+                    className={`px-2.5 py-1.5 text-sm rounded-lg transition-all ${
                       viewMode === 'week'
-                        ? 'bg-white shadow text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900'
+                        ? 'bg-card shadow text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
                     <span className="flex items-center gap-1">
@@ -729,7 +828,7 @@ export default function CalendarPage() {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setWeekOffset((prev) => prev - 1)}
-                      className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                      className="p-1.5 rounded-lg hover:bg-muted transition-colors"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -737,19 +836,19 @@ export default function CalendarPage() {
                     </button>
                     <button
                       onClick={() => setWeekOffset(0)}
-                      className="px-2 py-1 text-xs sm:text-sm text-gray-600 hover:text-gray-900 font-medium"
+                      className="px-2 py-1 text-xs sm:text-sm text-muted-foreground hover:text-foreground font-medium"
                     >
                       Today
                     </button>
                     <button
                       onClick={() => setWeekOffset((prev) => prev + 1)}
-                      className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                      className="p-1.5 rounded-lg hover:bg-muted transition-colors"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
-                    <span className="text-xs sm:text-sm text-gray-500 ml-1 hidden sm:inline">
+                    <span className="text-xs sm:text-sm text-muted-foreground ml-1 hidden sm:inline">
                       {weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} -{' '}
                       {new Date(weekStartDate.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
                         month: 'short',
@@ -763,8 +862,8 @@ export default function CalendarPage() {
                 {viewMode === 'week' && (
                   <button
                     onClick={() => setShowSidebar(!showSidebar)}
-                    className={`hidden sm:block p-1.5 rounded hover:bg-gray-100 transition-colors ml-auto ${
-                      showSidebar ? 'text-blue-600' : 'text-gray-400'
+                    className={`hidden sm:block p-1.5 rounded-lg hover:bg-muted transition-colors ml-auto ${
+                      showSidebar ? 'text-primary' : 'text-muted-foreground'
                     }`}
                     title={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
                   >
@@ -781,10 +880,10 @@ export default function CalendarPage() {
                   <button
                     key={filter}
                     onClick={() => setViewFilter(filter)}
-                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm rounded-full whitespace-nowrap transition-colors flex-shrink-0 ${
+                    className={`px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm rounded-xl whitespace-nowrap transition-all flex-shrink-0 active:scale-[0.97] ${
                       viewFilter === filter
-                        ? 'bg-gray-900 text-white'
-                        : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-secondary text-secondary-foreground hover:bg-muted'
                     }`}
                   >
                     {filter.charAt(0).toUpperCase() + filter.slice(1)}
@@ -800,11 +899,11 @@ export default function CalendarPage() {
 
             {/* Error state */}
             {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive">
                 {error}
                 <button
                   onClick={loadCalendarData}
-                  className="ml-2 text-red-800 underline hover:no-underline"
+                  className="ml-2 underline hover:no-underline"
                 >
                   Retry
                 </button>
@@ -833,26 +932,17 @@ export default function CalendarPage() {
               </div>
             )}
 
-            {/* Navigation */}
-            <div className="mt-8 pt-4 border-t border-gray-200 flex gap-4">
-              <a href="/" className="text-sm text-blue-600 hover:text-blue-800">
-                ← Home
-              </a>
-              <a href="/tasks" className="text-sm text-blue-600 hover:text-blue-800">
-                Tasks →
-              </a>
-            </div>
           </div>
         </div>
 
         {/* Prep Packet Modal */}
         {selectedEventId && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="max-w-lg w-full max-h-[80vh] overflow-auto">
               {loadingPrep ? (
-                <div className="bg-white rounded-lg p-8 text-center">
-                  <div className="animate-spin w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full mx-auto mb-4" />
-                  <p className="text-gray-600">Generating prep packet...</p>
+                <div className="card-ios p-8 text-center">
+                  <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+                  <p className="text-muted-foreground">Generating prep packet...</p>
                 </div>
               ) : prepPacket ? (
                 <PrepPacket
@@ -862,11 +952,11 @@ export default function CalendarPage() {
                   onClose={handleClosePrep}
                 />
               ) : (
-                <div className="bg-white rounded-lg p-8 text-center">
-                  <p className="text-gray-600">Failed to load prep packet</p>
+                <div className="card-ios p-8 text-center">
+                  <p className="text-muted-foreground">Failed to load prep packet</p>
                   <button
                     onClick={handleClosePrep}
-                    className="mt-4 text-sm text-gray-500 hover:text-gray-700"
+                    className="mt-4 text-sm text-muted-foreground hover:text-foreground"
                   >
                     Close
                   </button>
@@ -892,10 +982,10 @@ export default function CalendarPage() {
 
         {/* Toast */}
         {toast && (
-          <div className="fixed bottom-4 right-4 z-50">
+          <div className="fixed bottom-24 md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto z-50">
             <div
-              className={`rounded-lg px-4 py-2 shadow-lg text-sm ${
-                toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+              className={`rounded-xl px-4 py-3 shadow-lg text-sm ${
+                toast.type === 'success' ? 'bg-primary text-primary-foreground' : 'bg-destructive text-destructive-foreground'
               }`}
             >
               {toast.message}
@@ -906,8 +996,10 @@ export default function CalendarPage() {
         {/* Drag overlay */}
         <DragOverlay>
           {activeDragItem?.type === 'task' && (
-            <div className="bg-white border-2 border-blue-400 rounded-lg p-2 shadow-lg opacity-90">
-              <p className="text-sm font-medium">{activeDragItem.task.title}</p>
+            <div className="card-ios border-2 border-primary p-2 shadow-lg opacity-90">
+              <p className="text-sm font-medium">
+                {activeDragItem.task?.title || activeDragItem.event?.title || 'Task'}
+              </p>
             </div>
           )}
         </DragOverlay>

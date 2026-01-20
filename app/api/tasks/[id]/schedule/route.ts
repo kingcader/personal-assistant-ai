@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getSchedulingSuggestionsForTask,
   scheduleTask,
+  scheduleTaskAllDay,
   unscheduleTask,
   rescheduleTask,
 } from '@/lib/supabase/calendar-queries';
@@ -137,20 +138,88 @@ export async function POST(request: NextRequest, context: RouteContext) {
 /**
  * PUT /api/tasks/[id]/schedule
  *
- * Schedule or reschedule a task to a specific time block
+ * Schedule or reschedule a task to a specific time block or all-day
  *
- * Body: { scheduled_start: ISO string, scheduled_end: ISO string }
+ * Body options:
+ * - Timed: { scheduled_start: ISO string, scheduled_end: ISO string }
+ * - All-day: { is_all_day: true, date: "YYYY-MM-DD" }
  */
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const { id: taskId } = await context.params;
     const body = await request.json();
 
-    const { scheduled_start, scheduled_end } = body;
+    console.log('[PUT /api/tasks/[id]/schedule] Request:', { taskId, body });
 
+    const { scheduled_start, scheduled_end, is_all_day, date } = body;
+
+    // Check if task exists first
+    const { data: task, error: taskError } = await supabase
+      .from('tasks')
+      .select('id, status, title')
+      .eq('id', taskId)
+      .single<{ id: string; status: string; title: string }>();
+
+    if (taskError) {
+      console.error('[PUT /api/tasks/[id]/schedule] Task lookup error:', taskError);
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    }
+
+    if (!task) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    }
+
+    if (task.status === 'completed' || task.status === 'cancelled') {
+      return NextResponse.json(
+        { error: `Cannot schedule ${task.status} tasks` },
+        { status: 400 }
+      );
+    }
+
+    // Handle all-day scheduling
+    if (is_all_day) {
+      if (!date) {
+        return NextResponse.json(
+          { error: 'date is required for all-day tasks (format: YYYY-MM-DD)' },
+          { status: 400 }
+        );
+      }
+
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return NextResponse.json(
+          { error: 'Invalid date format. Expected YYYY-MM-DD' },
+          { status: 400 }
+        );
+      }
+
+      const scheduledDate = new Date(date + 'T00:00:00');
+      if (isNaN(scheduledDate.getTime())) {
+        return NextResponse.json(
+          { error: 'Invalid date value' },
+          { status: 400 }
+        );
+      }
+
+      console.log('[PUT /api/tasks/[id]/schedule] Scheduling all-day task:', {
+        taskId,
+        date,
+        scheduledDate: scheduledDate.toISOString(),
+      });
+
+      const scheduledTask = await scheduleTaskAllDay(taskId, scheduledDate);
+
+      return NextResponse.json({
+        success: true,
+        task: scheduledTask,
+      });
+    }
+
+    // Handle timed scheduling
     if (!scheduled_start || !scheduled_end) {
       return NextResponse.json(
-        { error: 'scheduled_start and scheduled_end are required' },
+        { error: 'scheduled_start and scheduled_end are required for timed tasks (or use is_all_day: true with date)' },
         { status: 400 }
       );
     }
@@ -158,9 +227,16 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const startTime = new Date(scheduled_start);
     const endTime = new Date(scheduled_end);
 
-    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+    if (isNaN(startTime.getTime())) {
       return NextResponse.json(
-        { error: 'Invalid date format' },
+        { error: 'Invalid scheduled_start date format' },
+        { status: 400 }
+      );
+    }
+
+    if (isNaN(endTime.getTime())) {
+      return NextResponse.json(
+        { error: 'Invalid scheduled_end date format' },
         { status: 400 }
       );
     }
@@ -172,23 +248,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Check if task exists
-    const { data: task, error: taskError } = await supabase
-      .from('tasks')
-      .select('id, status')
-      .eq('id', taskId)
-      .single<{ id: string; status: string }>();
-
-    if (taskError || !task) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
-    }
-
-    if (task.status === 'completed' || task.status === 'cancelled') {
-      return NextResponse.json(
-        { error: 'Cannot schedule completed or cancelled tasks' },
-        { status: 400 }
-      );
-    }
+    console.log('[PUT /api/tasks/[id]/schedule] Scheduling timed task:', {
+      taskId,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+    });
 
     const scheduledTask = await scheduleTask(taskId, startTime, endTime);
 
@@ -197,9 +261,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       task: scheduledTask,
     });
   } catch (error) {
-    console.error('Error scheduling task:', error);
+    console.error('[PUT /api/tasks/[id]/schedule] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to schedule task';
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to schedule task' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

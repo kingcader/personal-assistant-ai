@@ -61,6 +61,86 @@ function TimeSlot({
   );
 }
 
+// Droppable all-day slot component
+function AllDayDropZone({
+  dayKey,
+  isToday,
+  children,
+}: {
+  dayKey: string;
+  isToday: boolean;
+  children: React.ReactNode;
+}) {
+  const slotId = `all-day-${dayKey}`;
+  const { isOver, setNodeRef } = useDroppable({
+    id: slotId,
+    data: {
+      type: 'all-day-slot',
+      dayKey,
+    },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`
+        min-h-[32px] p-0.5 border-r border-gray-100 last:border-r-0 transition-colors
+        ${isOver ? 'bg-blue-100 ring-2 ring-inset ring-blue-300' : ''}
+        ${isToday && !isOver ? 'bg-blue-50/50' : ''}
+      `}
+    >
+      {children}
+    </div>
+  );
+}
+
+// Draggable all-day item component
+function DraggableAllDayItem({
+  item,
+  onClick,
+  getEventColor,
+  enableDrag,
+}: {
+  item: WeekGridEvent;
+  onClick?: () => void;
+  getEventColor: (event: WeekGridEvent) => string;
+  enableDrag?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `allday-${item.id}`,
+    data: {
+      type: 'task',
+      event: item,
+    },
+    disabled: !enableDrag,
+  });
+
+  const style = transform
+    ? {
+        transform: CSS.Translate.toString(transform),
+        zIndex: isDragging ? 50 : undefined,
+        opacity: isDragging ? 0.8 : 1,
+      }
+    : undefined;
+
+  return (
+    <button
+      ref={setNodeRef}
+      {...(enableDrag ? { ...listeners, ...attributes } : {})}
+      onClick={onClick}
+      style={style}
+      className={`
+        w-full text-xs px-1 py-0.5 rounded truncate text-left mb-0.5 border
+        ${getEventColor(item)}
+        ${enableDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
+        ${isDragging ? 'shadow-lg ring-2 ring-blue-400' : 'hover:opacity-80'}
+      `}
+    >
+      {item.type === 'task' && '•'} {item.title}
+    </button>
+  );
+}
+
 // Draggable event component
 function DraggableEvent({
   item,
@@ -261,22 +341,53 @@ export default function WeekGrid({
             {weekDays.map((day) => {
               const dayKey = day.toISOString().split('T')[0];
               const allDayItems = getAllDayItems(dayKey);
+              const todayFlag = isToday(day);
+
+              // Render all-day items - use draggable for scheduled tasks when drag-drop enabled
+              const itemsContent = allDayItems.map((item) => {
+                // Only scheduled tasks should be draggable (not events from Google Calendar)
+                const canDrag = enableDragDrop && item.type === 'task' && item.isScheduled;
+
+                if (enableDragDrop && item.type === 'task') {
+                  return (
+                    <DraggableAllDayItem
+                      key={item.id}
+                      item={item}
+                      onClick={() => onEventClick?.(item)}
+                      getEventColor={getEventColor}
+                      enableDrag={canDrag}
+                    />
+                  );
+                }
+
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onEventClick?.(item)}
+                    className={`w-full text-xs px-1 py-0.5 rounded truncate text-left mb-0.5 ${getEventColor(item)} border hover:opacity-80`}
+                  >
+                    {item.type === 'task' && '•'} {item.title}
+                  </button>
+                );
+              });
+
+              // Use droppable zone when drag-drop is enabled
+              if (enableDragDrop) {
+                return (
+                  <AllDayDropZone key={dayKey} dayKey={dayKey} isToday={todayFlag}>
+                    {itemsContent}
+                  </AllDayDropZone>
+                );
+              }
+
               return (
                 <div
                   key={dayKey}
                   className={`min-h-[32px] p-0.5 border-r border-gray-100 last:border-r-0 ${
-                    isToday(day) ? 'bg-blue-50/50' : ''
+                    todayFlag ? 'bg-blue-50/50' : ''
                   }`}
                 >
-                  {allDayItems.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => onEventClick?.(item)}
-                      className={`w-full text-xs px-1 py-0.5 rounded truncate text-left mb-0.5 ${getEventColor(item)} border hover:opacity-80`}
-                    >
-                      {item.type === 'task' && '•'} {item.title}
-                    </button>
-                  ))}
+                  {itemsContent}
                 </div>
               );
             })}

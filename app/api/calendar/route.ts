@@ -37,6 +37,7 @@ export interface CalendarTask {
   scheduled_start: string | null;
   scheduled_end: string | null;
   is_scheduled: boolean;
+  is_all_day: boolean;
 }
 
 export interface CalendarEventWithPrep extends DBCalendarEvent {
@@ -153,6 +154,7 @@ async function fetchTasksInRange(
       scheduled_start,
       scheduled_end,
       is_scheduled,
+      is_all_day,
       emails (subject)
     `)
     .order('due_date', { ascending: true, nullsFirst: false });
@@ -192,5 +194,6 @@ async function fetchTasksInRange(
     scheduled_start: task.scheduled_start || null,
     scheduled_end: task.scheduled_end || null,
     is_scheduled: task.is_scheduled || false,
+    is_all_day: task.is_all_day || false,
   }));
 }
