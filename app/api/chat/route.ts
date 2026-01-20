@@ -19,6 +19,7 @@ import {
   ENTITY_QUERY_PROMPT,
   PROJECT_QUERY_PROMPT,
   DECISION_EXTRACTION_PROMPT,
+  DEAL_EXTRACTION_PROMPT,
   parseIntentResponse,
   parseAgendaResponse,
   parseDraftResponse,
@@ -26,6 +27,7 @@ import {
   parseEntityQueryResponse,
   parseProjectQueryResponse,
   parseDecisionExtractionResponse,
+  parseDealExtractionResponse,
   buildDraftPromptWithSops,
   IntentClassification,
 } from '@/lib/ai/chat-prompts';
@@ -59,6 +61,9 @@ import {
   getProjectByName,
   logDecision,
   getActiveProjects,
+  createProject,
+  updateProject,
+  addProjectActivity,
 } from '@/lib/supabase/business-context-queries';
 import {
   extractEntityNamesFromMessage,
@@ -1311,6 +1316,186 @@ async function handleProjectQuery(
 }
 
 /**
+ * Handle deal update - remember info about a sale/transaction
+ * Creates or updates a project for the unit and links the buyer
+ */
+async function handleDealUpdate(
+  message: string,
+  intent: IntentClassification
+): Promise<ChatResponse> {
+  console.log('🏠 Handling deal update:', message);
+
+  // Extract deal details using AI
+  const aiResponse = await callAI(DEAL_EXTRACTION_PROMPT, `User statement: "${message}"`);
+  const extracted = parseDealExtractionResponse(aiResponse);
+
+  if (!extracted.unit) {
+    return {
+      success: true,
+      response: "I couldn't identify which unit or property you're talking about. Could you specify? For example:\n- \"Home 1 Share 1 is under contract with the Smith family\"\n- \"Unit 5 closed today\"\n- \"The Rodriguez family is interested in Home 3\"",
+      type: 'general',
+      confidence: 'low',
+      intent,
+    };
+  }
+
+  // Check if project exists for this unit
+  let project = await getProjectByName(extracted.unit);
+  let isNewProject = false;
+
+  // Map deal status to project status
+  const statusMap: Record<string, 'active' | 'on_hold' | 'completed' | 'cancelled'> = {
+    'interested': 'active',
+    'under_contract': 'active',
+    'closed': 'completed',
+    'fell_through': 'cancelled',
+    'available': 'on_hold',
+  };
+  const projectStatus = statusMap[extracted.status] || 'active';
+
+  if (!project) {
+    // Create new project for this unit
+    project = await createProject({
+      name: extracted.unit,
+      description: extracted.buyer
+        ? `${extracted.status === 'closed' ? 'Sold to' : 'Buyer:'} ${extracted.buyer}`
+        : `Status: ${extracted.status}`,
+      status: projectStatus,
+      key_contacts: extracted.buyer ? [extracted.buyer] : [],
+      milestones: extracted.closing_date ? [{
+        name: 'Closing',
+        target_date: extracted.closing_date,
+        completed_at: extracted.status === 'closed' ? new Date().toISOString() : undefined,
+      }] : [],
+      metadata: {
+        deal_status: extracted.status,
+        buyer: extracted.buyer,
+        buyer_email: extracted.buyer_email,
+      },
+    });
+    isNewProject = true;
+    console.log(`📝 Created new project for ${extracted.unit}`);
+  } else {
+    // Update existing project
+    const updates: Record<string, unknown> = {
+      status: projectStatus,
+      metadata: {
+        ...project.metadata,
+        deal_status: extracted.status,
+        buyer: extracted.buyer || project.metadata?.buyer,
+        buyer_email: extracted.buyer_email || project.metadata?.buyer_email,
+      },
+    };
+
+    // Update key contacts if buyer provided
+    if (extracted.buyer) {
+      const contacts = new Set(project.key_contacts || []);
+      contacts.add(extracted.buyer);
+      updates.key_contacts = Array.from(contacts);
+    }
+
+    // Update description
+    if (extracted.buyer) {
+      updates.description = `${extracted.status === 'closed' ? 'Sold to' : 'Buyer:'} ${extracted.buyer}`;
+    }
+
+    // Update milestones if closing date provided
+    if (extracted.closing_date) {
+      const milestones = project.milestones || [];
+      const closingMilestone = milestones.find(m => m.name === 'Closing');
+      if (closingMilestone) {
+        closingMilestone.target_date = extracted.closing_date;
+        if (extracted.status === 'closed') {
+          closingMilestone.completed_at = new Date().toISOString();
+        }
+      } else {
+        milestones.push({
+          name: 'Closing',
+          target_date: extracted.closing_date,
+          completed_at: extracted.status === 'closed' ? new Date().toISOString() : undefined,
+        });
+      }
+      updates.milestones = milestones;
+    }
+
+    project = await updateProject(project.id, updates);
+    console.log(`📝 Updated project for ${extracted.unit}`);
+  }
+
+  // Log activity
+  await addProjectActivity({
+    project_id: project.id,
+    activity_type: 'deal_update',
+    description: extracted.buyer
+      ? `${extracted.status.replace('_', ' ')}: ${extracted.buyer}${extracted.closing_date ? `, closing ${extracted.closing_date}` : ''}`
+      : `Status: ${extracted.status.replace('_', ' ')}`,
+  });
+
+  // If buyer name provided, create/update entity and link
+  if (extracted.buyer) {
+    try {
+      // Create buyer as entity (person or organization based on "family" keyword)
+      const entityType = extracted.buyer.toLowerCase().includes('family') ? 'person' : 'organization';
+      const buyerEntity = await upsertEntity({
+        name: extracted.buyer,
+        type: entityType,
+        aliases: [],
+        email: extracted.buyer_email || undefined,
+        description: `Buyer for ${extracted.unit}`,
+        confidence: 1.0,
+        context: `Deal update via chat: ${message}`,
+      });
+
+      if (buyerEntity) {
+        console.log(`👤 Created/updated buyer entity: ${buyerEntity.name}`);
+      }
+    } catch (e) {
+      console.log('⚠️ Could not create buyer entity:', e);
+    }
+  }
+
+  // Build response
+  const statusEmoji: Record<string, string> = {
+    'interested': '👀',
+    'under_contract': '📝',
+    'closed': '🎉',
+    'fell_through': '❌',
+    'available': '🏠',
+  };
+  const emoji = statusEmoji[extracted.status] || '📋';
+
+  const responseLines = [
+    `${emoji} Got it! ${isNewProject ? 'Created' : 'Updated'} **${extracted.unit}**`,
+    '',
+  ];
+
+  if (extracted.buyer) {
+    responseLines.push(`**Buyer**: ${extracted.buyer}`);
+  }
+  responseLines.push(`**Status**: ${extracted.status.replace('_', ' ')}`);
+
+  if (extracted.closing_date) {
+    responseLines.push(`**Closing**: ${new Date(extracted.closing_date).toLocaleDateString()}`);
+  }
+
+  if (extracted.notes) {
+    responseLines.push('');
+    responseLines.push(`_${extracted.notes}_`);
+  }
+
+  responseLines.push('');
+  responseLines.push("I'll remember this. When you get emails about this deal, I'll have this context.");
+
+  return {
+    success: true,
+    response: responseLines.join('\n'),
+    type: 'info',
+    confidence: extracted.confidence,
+    intent,
+  };
+}
+
+/**
  * Handle decision logging - record a business decision
  */
 async function handleDecisionLog(
@@ -1494,6 +1679,9 @@ export async function POST(request: NextRequest) {
         break;
       case 'decision_log':
         response = await handleDecisionLog(message, intent);
+        break;
+      case 'deal_update':
+        response = await handleDealUpdate(message, intent);
         break;
       case 'general':
       default:

@@ -64,7 +64,14 @@ export const INTENT_CLASSIFIER_PROMPT = `You are an intent classifier for a pers
    - Examples: "Remember that we decided to postpone the launch", "Log that we're using vendor A instead of B", "Record that the budget was approved at $50k"
    - NOT for asking about past decisions (use knowledge_question) - this is for CREATING new decision records
 
-13. **general** - General conversation, greetings, or questions that don't fit other categories
+13. **deal_update** - User is telling you about a DEAL or SALE status
+   - Someone buying/selling something: "X is buying Y", "X is under contract for Y", "X closed on Y"
+   - Deal status updates: "Home 1 is sold", "Unit 5 Share 2 is available", "The Smiths are interested in Home 3"
+   - Closing dates: "Closing March 15", "Settlement next week"
+   - Examples: "Smith family is buying Home 1 Share 1", "Home 5 Share 3 is under contract, closing April 10", "The Rodriguez deal fell through"
+   - Use this for any real estate/sales transaction updates
+
+14. **general** - General conversation, greetings, or questions that don't fit other categories
    - Examples: "Hello", "How are you?", "What can you help me with?"
 
 ## CONVERSATION CONTEXT
@@ -84,7 +91,7 @@ Examples with context:
 
 Return a JSON object with this exact structure:
 {
-  "intent": "knowledge_question" | "agenda_query" | "draft_generation" | "info_query" | "task_creation" | "event_creation" | "email_search" | "summarization" | "entity_update" | "entity_query" | "project_query" | "decision_log" | "general",
+  "intent": "knowledge_question" | "agenda_query" | "draft_generation" | "info_query" | "task_creation" | "event_creation" | "email_search" | "summarization" | "entity_update" | "entity_query" | "project_query" | "decision_log" | "deal_update" | "general",
   "confidence": "high" | "medium" | "low",
   "entities": {
     "person_names": ["name1", "name2"],
@@ -245,7 +252,7 @@ Return a JSON object with this structure:
  * Parse intent classification response
  */
 export interface IntentClassification {
-  intent: 'knowledge_question' | 'agenda_query' | 'draft_generation' | 'info_query' | 'task_creation' | 'event_creation' | 'email_search' | 'summarization' | 'entity_update' | 'entity_query' | 'project_query' | 'decision_log' | 'general';
+  intent: 'knowledge_question' | 'agenda_query' | 'draft_generation' | 'info_query' | 'task_creation' | 'event_creation' | 'email_search' | 'summarization' | 'entity_update' | 'entity_query' | 'project_query' | 'decision_log' | 'deal_update' | 'general';
   confidence: 'high' | 'medium' | 'low';
   entities: {
     person_names: string[];
@@ -271,6 +278,7 @@ const VALID_INTENTS = [
   'entity_query',
   'project_query',
   'decision_log',
+  'deal_update',
   'general',
 ];
 
@@ -821,4 +829,100 @@ export function buildDraftPromptWithSops(
 ${sopContext}
 
 IMPORTANT: Follow the Standard Operating Procedures above when drafting this communication.`;
+}
+
+// ============================================
+// DEAL UPDATE PROMPTS (Simple deal tracking)
+// ============================================
+
+/**
+ * Deal Extraction Prompt
+ * Extracts deal/sale information from natural conversation
+ */
+export const DEAL_EXTRACTION_PROMPT = `You are extracting deal/sale information from a user statement. The user is telling you about a real estate transaction or sale.
+
+## EXTRACT THE FOLLOWING
+
+1. **Unit/Property**: What is being sold (e.g., "Home 1 Share 1", "Unit 5", "Lot 12")
+2. **Buyer**: Who is buying (family name, person name, or company)
+3. **Status**: Current status of the deal
+4. **Closing Date**: When is closing (if mentioned)
+5. **Notes**: Any other relevant details
+
+## DEAL STATUSES
+
+Use one of these standard statuses:
+- "interested" - Buyer is interested but no commitment
+- "under_contract" - Signed contract, not yet closed
+- "closed" - Deal completed
+- "fell_through" - Deal cancelled/failed
+- "available" - No buyer, unit is available
+
+## RESPONSE FORMAT
+
+Return a JSON object:
+{
+  "unit": "Home 1 Share 1",
+  "buyer": "Smith family",
+  "buyer_email": null,
+  "status": "under_contract",
+  "closing_date": "2025-03-15",
+  "notes": "First-time buyers, referred by Jen",
+  "confidence": "high"
+}
+
+## GUIDELINES
+
+- Extract the unit/property name exactly as stated
+- If no specific buyer, set buyer to null
+- If no closing date mentioned, set to null
+- Parse dates into YYYY-MM-DD format
+- Include any extra context in notes
+- If status isn't clear, infer from context ("is buying" = under_contract, "bought" = closed)`;
+
+/**
+ * Parse deal extraction response
+ */
+export interface DealExtractionResponse {
+  unit: string;
+  buyer: string | null;
+  buyer_email: string | null;
+  status: 'interested' | 'under_contract' | 'closed' | 'fell_through' | 'available';
+  closing_date: string | null;
+  notes: string | null;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export function parseDealExtractionResponse(response: string): DealExtractionResponse {
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const validStatuses = ['interested', 'under_contract', 'closed', 'fell_through', 'available'];
+
+    return {
+      unit: parsed.unit || '',
+      buyer: parsed.buyer || null,
+      buyer_email: parsed.buyer_email || null,
+      status: validStatuses.includes(parsed.status) ? parsed.status : 'under_contract',
+      closing_date: parsed.closing_date || null,
+      notes: parsed.notes || null,
+      confidence: ['high', 'medium', 'low'].includes(parsed.confidence)
+        ? parsed.confidence
+        : 'medium',
+    };
+  } catch {
+    return {
+      unit: '',
+      buyer: null,
+      buyer_email: null,
+      status: 'under_contract',
+      closing_date: null,
+      notes: null,
+      confidence: 'low',
+    };
+  }
 }
