@@ -116,29 +116,38 @@ function DraggableAllDayItem({
     disabled: !enableDrag,
   });
 
-  const style = transform
-    ? {
-        transform: CSS.Translate.toString(transform),
-        zIndex: isDragging ? 50 : undefined,
-        opacity: isDragging ? 0.8 : 1,
-      }
-    : undefined;
+  const style: React.CSSProperties = {
+    ...(transform ? {
+      transform: CSS.Translate.toString(transform),
+      zIndex: 50,
+      opacity: 0.9,
+    } : {}),
+    // Ensure touch dragging works properly
+    touchAction: enableDrag ? 'none' : 'auto',
+  };
+
+  // Handle click only if not dragging
+  const handleClick = (e: React.MouseEvent) => {
+    if (!isDragging) {
+      onClick?.();
+    }
+  };
 
   return (
-    <button
+    <div
       ref={setNodeRef}
       {...(enableDrag ? { ...listeners, ...attributes } : {})}
-      onClick={onClick}
+      onClick={handleClick}
       style={style}
       className={`
-        w-full text-xs px-1 py-0.5 rounded truncate text-left mb-0.5 border
+        w-full text-xs px-1.5 py-1 rounded truncate text-left mb-0.5 border select-none
         ${getEventColor(item)}
         ${enableDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
         ${isDragging ? 'shadow-lg ring-2 ring-blue-400' : 'hover:opacity-80'}
       `}
     >
       {item.type === 'task' && '•'} {item.title}
-    </button>
+    </div>
   );
 }
 
@@ -346,9 +355,9 @@ export default function WeekGrid({
 
               // Render all-day items - use draggable for tasks when drag-drop enabled
               const itemsContent = allDayItems.map((item) => {
-                // Tasks are draggable if scheduled OR if they have a due date
-                // Events from Google Calendar are not draggable
-                const canDrag = enableDragDrop && item.type === 'task' && (item.isScheduled || item.hasDueDate);
+                // ALL tasks are draggable (not events from Google Calendar)
+                // The handler will decide what action to take based on task properties
+                const canDrag = enableDragDrop && item.type === 'task';
 
                 if (enableDragDrop && item.type === 'task') {
                   return (

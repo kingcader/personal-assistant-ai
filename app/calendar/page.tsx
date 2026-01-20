@@ -558,25 +558,26 @@ export default function CalendarPage() {
       }
       const { dayKey } = overData;
 
-      // Check if this is a due-date-only task (not scheduled)
-      // If so, update the due_date; otherwise schedule as all-day
+      // Check if this is a scheduled task or a due-date-only task
+      // - Scheduled tasks get rescheduled as all-day
+      // - Due-date tasks (not scheduled) get their due_date updated
       const eventData = activeData?.event;
-      const isDueDateTask = eventData?.hasDueDate && !eventData?.isScheduled;
+      const isScheduledTask = eventData?.isScheduled === true;
 
       console.log('[handleDragEnd] All-day drop:', {
         taskId,
         dayKey,
-        isDueDateTask,
+        isScheduledTask,
         hasDueDate: eventData?.hasDueDate,
         isScheduled: eventData?.isScheduled,
       });
 
-      if (isDueDateTask) {
-        // Update due date instead of scheduling
-        handleUpdateDueDate(taskId, dayKey);
-      } else {
-        // Schedule as all-day task
+      if (isScheduledTask) {
+        // Reschedule as all-day task
         handleScheduleAllDayTask(taskId, dayKey);
+      } else {
+        // Update due date (for unscheduled tasks)
+        handleUpdateDueDate(taskId, dayKey);
       }
     }
   }, [handleScheduleTask, handleScheduleAllDayTask, handleUpdateDueDate]);
