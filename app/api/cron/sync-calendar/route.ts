@@ -24,6 +24,7 @@ import {
   deleteOldEvents,
 } from '@/lib/supabase/calendar-queries';
 import { notify } from '@/lib/notifications/push';
+import { hasRecentNotificationByType } from '@/lib/supabase/notification-queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,13 +103,23 @@ export async function GET(request: NextRequest) {
           });
 
           if (upcomingMeetings.length > 0) {
-            await notify({
-              type: 'meeting_prep' as any,
-              title: `${upcomingMeetings.length} Meeting${upcomingMeetings.length > 1 ? 's' : ''} Without Prep`,
-              body: upcomingMeetings[0].summary || 'Upcoming meeting needs prep packet',
-              link: '/calendar',
-              tag: 'meeting-prep',
+            // Only send notification once - check if we already sent one in the last 4 hours
+            const alreadyNotified = await hasRecentNotificationByType({
+              type: 'meeting_prep',
+              withinHours: 4,
             });
+
+            if (!alreadyNotified) {
+              await notify({
+                type: 'meeting_prep' as any,
+                title: `${upcomingMeetings.length} Meeting${upcomingMeetings.length > 1 ? 's' : ''} Without Prep`,
+                body: upcomingMeetings[0].summary || 'Upcoming meeting needs prep packet',
+                link: '/calendar',
+                tag: 'meeting-prep',
+              });
+            } else {
+              console.log('📋 Skipping meeting prep notification - already sent within 4 hours');
+            }
           }
         }
       } catch (error) {
