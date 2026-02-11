@@ -55,7 +55,7 @@ export function BottomTabBar() {
   }, []);
 
   // Check if current path matches a "more" menu item
-  const isMoreActive = ['/waiting-on', '/briefs', '/knowledge-base', '/settings', '/projects'].some(
+  const isMoreActive = ['/waiting-on', '/briefs', '/knowledge-base', '/settings', '/projects', '/surf'].some(
     (path) => pathname.startsWith(path)
   );
 

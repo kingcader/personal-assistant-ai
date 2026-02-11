@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   FolderKanban,
+  Waves,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/hooks/useTheme';
@@ -39,6 +40,7 @@ const secondaryNavItems: NavItem[] = [
   { href: '/briefs', label: 'Daily Briefs', icon: FileText },
   { href: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
   { href: '/projects', label: 'Projects', icon: FolderKanban },
+  { href: '/surf', label: 'Surf Forecast', icon: Waves },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
