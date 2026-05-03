@@ -10,9 +10,14 @@
 import OpenAI from 'openai';
 import { downloadFile } from '@/lib/google/drive';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let openaiClient: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiClient;
+}
 
 /**
  * Vision analysis prompt for documents/images
@@ -52,7 +57,7 @@ export async function analyzeImageWithVision(
 
   console.log(`🔍 Analyzing image with AI vision: ${fileName}`);
 
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAIClient().chat.completions.create({
     model: 'gpt-4o', // GPT-4o has vision capabilities
     messages: [
       {
@@ -154,7 +159,7 @@ export async function analyzePdfWithVision(
   console.log(`🔍 Analyzing PDF with AI vision: ${fileName}`);
 
   // Try sending as PDF first (GPT-4o can sometimes handle this)
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAIClient().chat.completions.create({
     model: 'gpt-4o',
     messages: [
       {

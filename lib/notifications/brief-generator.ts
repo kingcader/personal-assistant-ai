@@ -9,9 +9,14 @@
 
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let openaiClient: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiClient;
+}
 
 /**
  * Calendar insights data structure (Loop #4)
@@ -248,7 +253,7 @@ Keep it concise and actionable. ${data.tasks_overdue.length > 0 ? 'Emphasize the
   let summary = `Good morning! Today is ${today}.`;
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         {
@@ -371,7 +376,7 @@ Keep it concise. ${data.tasks_completed_today.length > 0 ? 'Acknowledge the prog
   let summary = `End of day summary for ${today}.`;
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         {
