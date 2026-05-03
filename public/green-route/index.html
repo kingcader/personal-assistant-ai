@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1F4D2C" />
+  <title>Green Route Costa Rica · Private Tours & Transportation</title>
+  <meta name="description" content="Private tours and transportation in Costa Rica with Randall Zuñiga. 30+ years of tourism expertise. 18-passenger van for groups, families, and unforgettable adventures." />
+  <meta name="keywords" content="Costa Rica tours, Costa Rica transportation, private tours Costa Rica, Tamarindo tours, Arenal Volcano, Manuel Antonio, airport transfer Costa Rica, 18 passenger van Costa Rica" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Green Route Costa Rica · Private Tours & Transportation" />
+  <meta property="og:description" content="Discover Costa Rica with a trusted local. 30+ years of tourism expertise, private 18-passenger van, custom tours." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://images.unsplash.com/photo-1518182170546-07661fd94144?w=1200&h=630&fit=crop" />
+
+  <!-- Favicon (inline SVG) -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='48' fill='%231F4D2C'/%3E%3Cpath d='M30 60 Q 50 30 70 60' stroke='%23D4A437' stroke-width='5' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='50' cy='38' r='6' fill='%23F5EFE0'/%3E%3C/svg%3E" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- ============== HEADER / NAV ============== -->
+  <header class="site-header" id="siteHeader">
+    <div class="container header-inner">
+      <a href="#top" class="brand" aria-label="Green Route home">
+        <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="48" fill="#1F4D2C" />
+          <path d="M20 65 Q 35 40 50 55 Q 65 70 80 45" stroke="#D4A437" stroke-width="6" fill="none" stroke-linecap="round" />
+          <circle cx="50" cy="55" r="5" fill="#F5EFE0" />
+          <path d="M25 78 L 75 78" stroke="#F5EFE0" stroke-width="3" stroke-linecap="round" opacity="0.7" />
+        </svg>
+        <span class="brand-text">
+          <span class="brand-name">Green Route</span>
+          <span class="brand-tag" data-i18n="brand.tagline">Costa Rica</span>
+        </span>
+      </a>
+
+      <nav class="primary-nav" aria-label="Primary">
+        <a href="#tours" data-i18n="nav.tours">Tours</a>
+        <a href="#about" data-i18n="nav.about">About</a>
+        <a href="#reviews" data-i18n="nav.reviews">Reviews</a>
+        <a href="#contact" data-i18n="nav.contact">Contact</a>
+      </nav>
+
+      <div class="header-actions">
+        <button class="lang-toggle" id="langToggle" aria-label="Switch language">
+          <span class="lang-flag" id="langFlag">EN</span>
+          <span class="lang-sep">|</span>
+          <span class="lang-other" id="langOther">ES</span>
+        </button>
+        <a href="#contact" class="btn btn-primary btn-sm" data-i18n="nav.book">Book Now</a>
+        <button class="menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile menu -->
+    <div class="mobile-menu" id="mobileMenu" hidden>
+      <a href="#tours" data-i18n="nav.tours">Tours</a>
+      <a href="#about" data-i18n="nav.about">About</a>
+      <a href="#reviews" data-i18n="nav.reviews">Reviews</a>
+      <a href="#contact" data-i18n="nav.contact">Contact</a>
+      <a href="#contact" class="btn btn-primary" data-i18n="nav.book">Book Now</a>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- ============== HERO ============== -->
+    <section class="hero">
+      <div class="hero-media">
+        <img src="https://images.unsplash.com/photo-1518182170546-07661fd94144?w=1920&q=80&auto=format&fit=crop"
+             alt="Costa Rica volcano and rainforest at sunrise"
+             loading="eager" fetchpriority="high" />
+        <div class="hero-overlay"></div>
+      </div>
+
+      <div class="container hero-content">
+        <span class="eyebrow" data-i18n="hero.eyebrow">Trusted for 30+ Years in Costa Rica Tourism</span>
+        <h1 class="hero-title" data-i18n="hero.title">
+          Discover Costa Rica the Way It Was Meant to Be Lived
+        </h1>
+        <p class="hero-sub" data-i18n="hero.sub">
+          Private tours and transportation with Randall Zuñiga. Volcanoes, beaches, surf, and wildlife in a comfortable 18-passenger van, guided by three decades of local expertise.
+        </p>
+        <div class="hero-ctas">
+          <a href="#tours" class="btn btn-primary btn-lg" data-i18n="hero.cta1">Explore Tours</a>
+          <a href="#contact" class="btn btn-ghost btn-lg" data-i18n="hero.cta2">Plan My Trip</a>
+        </div>
+
+        <div class="hero-trust">
+          <div class="trust-item">
+            <strong>30+</strong>
+            <span data-i18n="hero.trust1">Years of Experience</span>
+          </div>
+          <div class="trust-item">
+            <strong>18</strong>
+            <span data-i18n="hero.trust2">Passenger Private Van</span>
+          </div>
+          <div class="trust-item">
+            <strong>5.0</strong>
+            <span data-i18n="hero.trust3">Average Rating</span>
+          </div>
+        </div>
+      </div>
+
+      <a href="#tours" class="scroll-cue" aria-label="Scroll to tours">
+        <span></span>
+      </a>
+    </section>
+
+    <!-- ============== REVIEW PLATFORMS BAR ============== -->
+    <section class="review-bar">
+      <div class="container review-bar-inner">
+        <p class="review-bar-label" data-i18n="reviewbar.label">Trusted by travelers on</p>
+        <div class="review-platforms">
+          <div class="platform">
+            <svg viewBox="0 0 24 24" class="platform-icon" aria-hidden="true"><path fill="#4285F4" d="M22.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h5.9c-.3 1.4-1 2.5-2.2 3.3v2.7h3.6c2.1-1.9 3.2-4.8 3.2-8.1z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.3 1.1-3.7 1.1-2.8 0-5.2-1.9-6.1-4.5H2.2v2.8C4 20.4 7.7 23 12 23z"/><path fill="#FBBC04" d="M5.9 14.2c-.2-.7-.4-1.4-.4-2.2s.1-1.5.4-2.2V7H2.2C1.4 8.5 1 10.2 1 12s.4 3.5 1.2 5l3.7-2.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.4 2 14.9 1 12 1 7.7 1 4 3.6 2.2 7l3.7 2.8c.9-2.6 3.3-4.4 6.1-4.4z"/></svg>
+            <div class="platform-text">
+              <span class="platform-name">Google</span>
+              <span class="platform-rating">★★★★★ 5.0</span>
+            </div>
+          </div>
+          <div class="platform">
+            <svg viewBox="0 0 24 24" class="platform-icon" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#34E0A1"/><circle cx="8" cy="12" r="3.2" fill="#000"/><circle cx="16" cy="12" r="3.2" fill="#000"/><circle cx="8" cy="12" r="1.5" fill="#fff"/><circle cx="16" cy="12" r="1.5" fill="#fff"/></svg>
+            <div class="platform-text">
+              <span class="platform-name">Tripadvisor</span>
+              <span class="platform-rating">●●●●● <span data-i18n="reviewbar.excellent">Excellent</span></span>
+            </div>
+          </div>
+          <div class="platform">
+            <svg viewBox="0 0 24 24" class="platform-icon" aria-hidden="true"><rect width="24" height="24" rx="4" fill="#328E04"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="Arial">V</text></svg>
+            <div class="platform-text">
+              <span class="platform-name">Viator</span>
+              <span class="platform-rating">★★★★★ 5.0</span>
+            </div>
+          </div>
+          <div class="platform">
+            <svg viewBox="0 0 24 24" class="platform-icon" aria-hidden="true"><rect width="24" height="24" rx="4" fill="#1877F2"/><path fill="#fff" d="M14 8h2V5h-2c-1.7 0-3 1.3-3 3v2H9v3h2v6h3v-6h2.5l.5-3H14V8.5c0-.3.2-.5.5-.5z"/></svg>
+            <div class="platform-text">
+              <span class="platform-name">Facebook</span>
+              <span class="platform-rating">★★★★★ 5.0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== WHY US ============== -->
+    <section class="why-us section">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow eyebrow-dark" data-i18n="why.eyebrow">Why Travel with Green Route</span>
+          <h2 data-i18n="why.title">A Safer, Smarter Way to See Costa Rica</h2>
+        </div>
+        <div class="why-grid">
+          <div class="why-card">
+            <div class="why-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 7v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V7l-8-5z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <h3 data-i18n="why.card1.title">Three Decades of Trust</h3>
+            <p data-i18n="why.card1.body">Randall has been welcoming travelers to Costa Rica for over 30 years. He has managed top hotels and run one of Tamarindo's biggest nightlife venues. He knows the country, the people, and how to deliver a memorable trip.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="8" width="20" height="11" rx="2"/><path d="M6 19v2M18 19v2M2 13h20"/><circle cx="7" cy="16" r="1.2"/><circle cx="17" cy="16" r="1.2"/></svg>
+            </div>
+            <h3 data-i18n="why.card2.title">Comfortable 18-Passenger Van</h3>
+            <p data-i18n="why.card2.body">Air conditioning, plenty of luggage room, large windows for the views. Perfect for families, friend groups, weddings, retreats, and corporate travel.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
+            </div>
+            <h3 data-i18n="why.card3.title">Bilingual Local Host</h3>
+            <p data-i18n="why.card3.body">Fluent English, native Spanish, and the cultural knowledge to translate Costa Rica beyond the guidebook. Real recommendations, real stories, real Pura Vida.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg>
+            </div>
+            <h3 data-i18n="why.card4.title">Tailored to You</h3>
+            <p data-i18n="why.card4.body">Want surf, wildlife, volcanoes, and a sunset toast on the beach? We build the route around your group. No cookie-cutter itineraries.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== TOURS ============== -->
+    <section id="tours" class="tours section section-cream">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow eyebrow-dark" data-i18n="tours.eyebrow">Tours & Transport</span>
+          <h2 data-i18n="tours.title">Choose Your Costa Rica Adventure</h2>
+          <p class="section-lede" data-i18n="tours.lede">Group rates per person are based on a full van. Private van rates are for your group only. All tours include hotel pickup, water, and the kind of local insight you only get from a 30-year veteran.</p>
+        </div>
+
+        <div class="tour-grid">
+          <!-- Tour 1: Arenal -->
+          <article class="tour-card">
+            <div class="tour-img">
+              <img src="https://images.unsplash.com/photo-1580094333632-438bdc04f79f?w=800&q=80&auto=format&fit=crop" alt="Arenal Volcano" loading="lazy" />
+              <span class="tour-badge tour-badge-gold" data-i18n="tours.popular">Most Popular</span>
+            </div>
+            <div class="tour-body">
+              <h3 data-i18n="tour1.title">Arenal Volcano Adventure</h3>
+              <p data-i18n="tour1.desc">Stand in the shadow of an active volcano, hike lava trails, and soak in natural hot springs at sunset. Full day from Guanacaste or Central Valley.</p>
+              <ul class="tour-meta">
+                <li><span data-i18n="tours.duration">Duration</span>: <strong data-i18n="tour1.duration">10–12 hours</strong></li>
+                <li><span data-i18n="tours.includes">Includes</span>: <strong data-i18n="tour1.includes">Pickup, hot springs, lunch</strong></li>
+              </ul>
+              <div class="tour-price">
+                <div>
+                  <span class="price-label" data-i18n="tours.fromPerson">From / person</span>
+                  <span class="price-value">$130</span>
+                </div>
+                <div>
+                  <span class="price-label" data-i18n="tours.privateVan">Private van</span>
+                  <span class="price-value">$1,100</span>
+                </div>
+              </div>
+              <a href="#contact" class="btn btn-primary btn-block" data-i18n="tours.book">Book This Tour</a>
+            </div>
+          </article>
+
+          <!-- Tour 2: Manuel Antonio -->
+          <article class="tour-card">
+            <div class="tour-img">
+              <img src="https://images.unsplash.com/photo-1552727451-6f53675b4c47?w=800&q=80&auto=format&fit=crop" alt="Manuel Antonio National Park beach and rainforest" loading="lazy" />
+            </div>
+            <div class="tour-body">
+              <h3 data-i18n="tour2.title">Manuel Antonio National Park</h3>
+              <p data-i18n="tour2.desc">White-sand beaches inside one of the most biodiverse parks on earth. Spot sloths, monkeys, and toucans, then cool off in the Pacific.</p>
+              <ul class="tour-meta">
+                <li><span data-i18n="tours.duration">Duration</span>: <strong data-i18n="tour2.duration">9–11 hours</strong></li>
+                <li><span data-i18n="tours.includes">Includes</span>: <strong data-i18n="tour2.includes">Pickup, park entry, naturalist guide</strong></li>
+              </ul>
+              <div class="tour-price">
+                <div>
+                  <span class="price-label" data-i18n="tours.fromPerson">From / person</span>
+                  <span class="price-value">$110</span>
+                </div>
+                <div>
+                  <span class="price-label" data-i18n="tours.privateVan">Private van</span>
+                  <span class="price-value">$950</span>
+                </div>
+              </div>
+              <a href="#contact" class="btn btn-primary btn-block" data-i18n="tours.book">Book This Tour</a>
+            </div>
+          </article>
+
+          <!-- Tour 3: Monteverde -->
+          <article class="tour-card">
+            <div class="tour-img">
+              <img src="https://images.unsplash.com/photo-1531171596281-8b5d26917d8b?w=800&q=80&auto=format&fit=crop" alt="Monteverde Cloud Forest" loading="lazy" />
+            </div>
+            <div class="tour-body">
+              <h3 data-i18n="tour3.title">Monteverde Cloud Forest</h3>
+              <p data-i18n="tour3.desc">Hanging bridges, zip lines, and cloud-wrapped rainforest. A different climate, a different world, a few hours from the coast.</p>
+              <ul class="tour-meta">
+                <li><span data-i18n="tours.duration">Duration</span>: <strong data-i18n="tour3.duration">10–12 hours</strong></li>
+                <li><span data-i18n="tours.includes">Includes</span>: <strong data-i18n="tour3.includes">Pickup, hanging bridges, lunch</strong></li>
+              </ul>
+              <div class="tour-price">
+                <div>
+                  <span class="price-label" data-i18n="tours.fromPerson">From / person</span>
+                  <span class="price-value">$145</span>
+                </div>
+                <div>
+                  <span class="price-label" data-i18n="tours.privateVan">Private van</span>
+                  <span class="price-value">$1,250</span>
+                </div>
+              </div>
+              <a href="#contact" class="btn btn-primary btn-block" data-i18n="tours.book">Book This Tour</a>
+            </div>
+          </article>
+
+          <!-- Tour 4: Rincon de la Vieja -->
+          <article class="tour-card">
+            <div class="tour-img">
+              <img src="https://images.unsplash.com/photo-1583244532610-2a234e9e2074?w=800&q=80&auto=format&fit=crop" alt="Costa Rica wildlife and waterfalls" loading="lazy" />
+            </div>
+            <div class="tour-body">
+              <h3 data-i18n="tour4.title">Rincón de la Vieja</h3>
+              <p data-i18n="tour4.desc">Bubbling mud pots, waterfalls, and a working volcano national park. Adventure with a side of geothermal magic.</p>
+              <ul class="tour-meta">
+                <li><span data-i18n="tours.duration">Duration</span>: <strong data-i18n="tour4.duration">8–10 hours</strong></li>
+                <li><span data-i18n="tours.includes">Includes</span>: <strong data-i18n="tour4.includes">Pickup, park entry, refreshments</strong></li>
+              </ul>
+              <div class="tour-price">
+                <div>
+                  <span class="price-label" data-i18n="tours.fromPerson">From / person</span>
+                  <span class="price-value">$125</span>
+                </div>
+                <div>
+                  <span class="price-label" data-i18n="tours.privateVan">Private van</span>
+                  <span class="price-value">$1,050</span>
+                </div>
+              </div>
+              <a href="#contact" class="btn btn-primary btn-block" data-i18n="tours.book">Book This Tour</a>
+            </div>
+          </article>
+
+          <!-- Tour 5: Beach Hop -->
+          <article class="tour-card">
+            <div class="tour-img">
+              <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80&auto=format&fit=crop" alt="Costa Rica beach and palm trees" loading="lazy" />
+            </div>
+            <div class="tour-body">
+              <h3 data-i18n="tour5.title">Guanacaste Beach Hopping</h3>
+              <p data-i18n="tour5.desc">Tamarindo, Conchal, Flamingo, and the hidden coves only locals know. Three or four beaches in one perfect day.</p>
+              <ul class="tour-meta">
+                <li><span data-i18n="tours.duration">Duration</span>: <strong data-i18n="tour5.duration">7–9 hours</strong></li>
+                <li><span data-i18n="tours.includes">Includes</span>: <strong data-i18n="tour5.includes">Pickup, snorkel gear, drinks</strong></li>
+              </ul>
+              <div class="tour-price">
+                <div>
+                  <span class="price-label" data-i18n="tours.fromPerson">From / person</span>
+                  <span class="price-value">$85</span>
+                </div>
+                <div>
+                  <span class="price-label" data-i18n="tours.privateVan">Private van</span>
+                  <span class="price-value">$700</span>
+                </div>
+              </div>
+              <a href="#contact" class="btn btn-primary btn-block" data-i18n="tours.book">Book This Tour</a>
+            </div>
+          </article>
+
+          <!-- Tour 6: Surf -->
+          <article class="tour-card">
+            <div class="tour-img">
+              <img src="https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800&q=80&auto=format&fit=crop" alt="Surfer on Costa Rica wave" loading="lazy" />
+            </div>
+            <div class="tour-body">
+              <h3 data-i18n="tour6.title">Tamarindo Surf Experience</h3>
+              <p data-i18n="tour6.desc">Surf lessons for beginners or transport to the best breaks for pros. World-class waves, world-class instructors, your van waiting on the sand.</p>
+              <ul class="tour-meta">
+                <li><span data-i18n="tours.duration">Duration</span>: <strong data-i18n="tour6.duration">4–6 hours</strong></li>
+                <li><span data-i18n="tours.includes">Includes</span>: <strong data-i18n="tour6.includes">Boards, lesson, transport</strong></li>
+              </ul>
+              <div class="tour-price">
+                <div>
+                  <span class="price-label" data-i18n="tours.fromPerson">From / person</span>
+                  <span class="price-value">$95</span>
+                </div>
+                <div>
+                  <span class="price-label" data-i18n="tours.privateVan">Private van</span>
+                  <span class="price-value">$800</span>
+                </div>
+              </div>
+              <a href="#contact" class="btn btn-primary btn-block" data-i18n="tours.book">Book This Tour</a>
+            </div>
+          </article>
+
+          <!-- Tour 7: Airport Transfer -->
+          <article class="tour-card">
+            <div class="tour-img">
+              <img src="https://images.unsplash.com/photo-1464219789935-c2d9d9aba644?w=800&q=80&auto=format&fit=crop" alt="Van on Costa Rica road" loading="lazy" />
+              <span class="tour-badge tour-badge-green" data-i18n="tours.transfer">Transfer</span>
+            </div>
+            <div class="tour-body">
+              <h3 data-i18n="tour7.title">Private Airport Transfer</h3>
+              <p data-i18n="tour7.desc">Door-to-door from Liberia (LIR) or San José (SJO) to your hotel anywhere in Costa Rica. We track your flight and meet you with a sign at arrivals.</p>
+              <ul class="tour-meta">
+                <li><span data-i18n="tour7.from">From</span>: <strong>LIR / SJO</strong></li>
+                <li><span data-i18n="tour7.cap">Capacity</span>: <strong data-i18n="tour7.capVal">Up to 18 passengers + luggage</strong></li>
+              </ul>
+              <div class="tour-price">
+                <div>
+                  <span class="price-label" data-i18n="tour7.lir">From Liberia</span>
+                  <span class="price-value">$90</span>
+                </div>
+                <div>
+                  <span class="price-label" data-i18n="tour7.sjo">From San José</span>
+                  <span class="price-value">$160</span>
+                </div>
+              </div>
+              <a href="#contact" class="btn btn-primary btn-block" data-i18n="tour7.book">Book Transfer</a>
+            </div>
+          </article>
+
+          <!-- Tour 8: Custom -->
+          <article class="tour-card tour-card-feature">
+            <div class="tour-img">
+              <img src="https://images.unsplash.com/photo-1597212720158-e21cda1bd3eb?w=800&q=80&auto=format&fit=crop" alt="Costa Rica wildlife sloth" loading="lazy" />
+              <span class="tour-badge tour-badge-gold" data-i18n="tours.custom">Custom</span>
+            </div>
+            <div class="tour-body">
+              <h3 data-i18n="tour8.title">Custom Multi-Day Itineraries</h3>
+              <p data-i18n="tour8.desc">Weddings, retreats, family reunions, corporate trips. We build the full route, handle the logistics, and make every day effortless.</p>
+              <ul class="tour-meta">
+                <li><span data-i18n="tour8.dur">Duration</span>: <strong data-i18n="tour8.durVal">2–14 days</strong></li>
+                <li><span data-i18n="tour8.inc">Includes</span>: <strong data-i18n="tour8.incVal">Full planning, transport, hotels on request</strong></li>
+              </ul>
+              <div class="tour-price tour-price-quote">
+                <span data-i18n="tour8.quote">Custom quote based on your group and dates</span>
+              </div>
+              <a href="#contact" class="btn btn-primary btn-block" data-i18n="tour8.book">Request a Quote</a>
+            </div>
+          </article>
+        </div>
+
+        <!-- Mid-page CTA -->
+        <div class="mid-cta">
+          <div class="mid-cta-text">
+            <h3 data-i18n="midcta.title">Not sure which tour is right for you?</h3>
+            <p data-i18n="midcta.body">Tell us your dates and what you love. Randall will reply personally with a recommended itinerary.</p>
+          </div>
+          <div class="mid-cta-actions">
+            <a href="#contact" class="btn btn-primary btn-lg" data-i18n="midcta.cta1">Plan My Trip</a>
+            <a href="#payment" class="btn btn-gold btn-lg" data-i18n="midcta.cta2">Pay Online</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== ABOUT ============== -->
+    <section id="about" class="about section">
+      <div class="container about-grid">
+        <div class="about-media">
+          <img src="https://images.unsplash.com/photo-1545179605-1296651e9d43?w=900&q=80&auto=format&fit=crop"
+               alt="Tamarindo beach Costa Rica" loading="lazy" />
+          <div class="about-stat">
+            <strong>30+</strong>
+            <span data-i18n="about.stat">Years in Costa Rica tourism</span>
+          </div>
+        </div>
+        <div class="about-text">
+          <span class="eyebrow eyebrow-dark" data-i18n="about.eyebrow">About Green Route</span>
+          <h2 data-i18n="about.title">Meet Randall Zuñiga</h2>
+          <p data-i18n="about.p1">Randall has spent more than 30 years inside Costa Rica's tourism industry. He has managed leading hotels along the Pacific coast and built one of the biggest nightlife venues in Tamarindo into a destination of its own.</p>
+          <p data-i18n="about.p2">After three decades of welcoming travelers, Randall founded Green Route to share Costa Rica the way locals experience it. He speaks fluent English, knows every shortcut between the volcanoes and the beaches, and has the relationships that turn a good trip into the trip of a lifetime.</p>
+          <p data-i18n="about.p3">When you ride with Green Route, you are not booking a transfer. You are booking 30 years of trusted experience, a comfortable 18-passenger van, and a host who genuinely loves showing off his country.</p>
+          <ul class="about-list">
+            <li data-i18n="about.l1">Veteran hotel manager and hospitality leader</li>
+            <li data-i18n="about.l2">Founder of one of Tamarindo's biggest venues</li>
+            <li data-i18n="about.l3">Fully bilingual: English and Spanish</li>
+            <li data-i18n="about.l4">Trusted by Costa Rica's tourism industry for 30+ years</li>
+          </ul>
+          <a href="#contact" class="btn btn-primary" data-i18n="about.cta">Travel with Randall</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== REVIEWS ============== -->
+    <section id="reviews" class="reviews section section-dark">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow eyebrow-gold" data-i18n="reviews.eyebrow">What Travelers Say</span>
+          <h2 data-i18n="reviews.title">Five-Star Reviews from Around the World</h2>
+          <p class="section-lede section-lede-light" data-i18n="reviews.lede">Real reviews from travelers who rode with Green Route. Verified on Google, Tripadvisor, Viator, and Facebook.</p>
+        </div>
+
+        <div class="reviews-grid">
+          <article class="review-card">
+            <div class="review-stars">★★★★★</div>
+            <p class="review-body" data-i18n="rev1.body">"Randall picked us up at Liberia airport with a sign and a smile. Our family of 12 had room to spread out, the van was spotless, and he gave us tips for every stop. The Arenal day was the highlight of our two weeks."</p>
+            <div class="review-meta">
+              <strong data-i18n="rev1.name">The Henderson Family</strong>
+              <span><span data-i18n="rev1.from">Texas, USA</span> · Google</span>
+            </div>
+          </article>
+
+          <article class="review-card">
+            <div class="review-stars">★★★★★</div>
+            <p class="review-body" data-i18n="rev2.body">"We booked the Monteverde tour through Viator and got Randall. Best decision of the trip. He knows the country inside out and he made everyone in our group feel like family. Highly recommend."</p>
+            <div class="review-meta">
+              <strong data-i18n="rev2.name">Lucia M.</strong>
+              <span><span data-i18n="rev2.from">Madrid, Spain</span> · Viator</span>
+            </div>
+          </article>
+
+          <article class="review-card">
+            <div class="review-stars">★★★★★</div>
+            <p class="review-body" data-i18n="rev3.body">"Hired Green Route for a corporate retreat of 16 people. Randall handled every detail. Hotel transfers, surf lessons in Tamarindo, sunset dinner. Smooth, professional, and genuinely fun. We rebooked for next year."</p>
+            <div class="review-meta">
+              <strong data-i18n="rev3.name">James O.</strong>
+              <span><span data-i18n="rev3.from">Toronto, Canada</span> · Tripadvisor</span>
+            </div>
+          </article>
+
+          <article class="review-card">
+            <div class="review-stars">★★★★★</div>
+            <p class="review-body" data-i18n="rev4.body">"My husband and I were nervous about driving in Costa Rica. Randall took the stress out of the whole trip. Comfortable van, clear English, fair prices, real local knowledge. We saw two volcanoes, three beaches, and a sloth."</p>
+            <div class="review-meta">
+              <strong data-i18n="rev4.name">Karen P.</strong>
+              <span><span data-i18n="rev4.from">London, UK</span> · Google</span>
+            </div>
+          </article>
+
+          <article class="review-card">
+            <div class="review-stars">★★★★★</div>
+            <p class="review-body" data-i18n="rev5.body">"We chartered the 18-passenger van for a destination wedding. Randall coordinated guest pickups across three different hotels and never missed a beat. Would trust him with any group, any time."</p>
+            <div class="review-meta">
+              <strong data-i18n="rev5.name">Daniela & Marco</strong>
+              <span><span data-i18n="rev5.from">Milan, Italy</span> · Facebook</span>
+            </div>
+          </article>
+
+          <article class="review-card">
+            <div class="review-stars">★★★★★</div>
+            <p class="review-body" data-i18n="rev6.body">"Pura Vida personified. Randall has been doing this for 30 years and it shows. We booked three day tours and could not have asked for a better guide. The Manuel Antonio day was unreal."</p>
+            <div class="review-meta">
+              <strong data-i18n="rev6.name">The Park Family</strong>
+              <span><span data-i18n="rev6.from">Seoul, South Korea</span> · Tripadvisor</span>
+            </div>
+          </article>
+        </div>
+
+        <div class="review-summary">
+          <div class="review-summary-card">
+            <span class="rs-score">5.0</span>
+            <span class="rs-stars">★★★★★</span>
+            <span class="rs-label" data-i18n="reviews.summaryGoogle">Google Reviews</span>
+          </div>
+          <div class="review-summary-card">
+            <span class="rs-score">5.0</span>
+            <span class="rs-stars">★★★★★</span>
+            <span class="rs-label" data-i18n="reviews.summaryViator">Viator</span>
+          </div>
+          <div class="review-summary-card">
+            <span class="rs-score" data-i18n="reviews.excellent">Excellent</span>
+            <span class="rs-stars">●●●●●</span>
+            <span class="rs-label" data-i18n="reviews.summaryTrip">Tripadvisor</span>
+          </div>
+          <div class="review-summary-card">
+            <span class="rs-score">5.0</span>
+            <span class="rs-stars">★★★★★</span>
+            <span class="rs-label" data-i18n="reviews.summaryFb">Facebook</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== PAYMENT ============== -->
+    <section id="payment" class="payment section section-cream">
+      <div class="container payment-grid">
+        <div class="payment-text">
+          <span class="eyebrow eyebrow-dark" data-i18n="pay.eyebrow">Secure Payment</span>
+          <h2 data-i18n="pay.title">Pay Online, Travel Stress-Free</h2>
+          <p data-i18n="pay.body">Already confirmed your tour with Randall? Pay your deposit or balance securely online. We accept all major cards and process payments through Stripe with full encryption.</p>
+          <ul class="payment-features">
+            <li data-i18n="pay.f1">256-bit SSL encrypted payments</li>
+            <li data-i18n="pay.f2">Visa, Mastercard, American Express</li>
+            <li data-i18n="pay.f3">Email receipt sent instantly</li>
+            <li data-i18n="pay.f4">Refundable up to 7 days before tour</li>
+          </ul>
+          <a href="#" class="btn btn-gold btn-lg" id="payButton" data-i18n="pay.button">Pay with Card</a>
+          <p class="payment-note" data-i18n="pay.note">Stripe checkout coming soon. For now, contact Randall to confirm your booking and receive a secure payment link.</p>
+        </div>
+        <div class="payment-cards">
+          <div class="card-icons">
+            <span class="card-icon">VISA</span>
+            <span class="card-icon">MC</span>
+            <span class="card-icon">AMEX</span>
+            <span class="card-icon">DISC</span>
+          </div>
+          <div class="ssl-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            <span data-i18n="pay.secure">Secure Checkout</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== CONTACT / FINAL CTA ============== -->
+    <section id="contact" class="contact section">
+      <div class="container">
+        <div class="section-head section-head-center">
+          <span class="eyebrow eyebrow-dark" data-i18n="contact.eyebrow">Contact Green Route</span>
+          <h2 data-i18n="contact.title">Ready to Plan Your Costa Rica Trip?</h2>
+          <p class="section-lede" data-i18n="contact.lede">Send us your dates and what you have in mind. Randall replies personally, usually within a few hours.</p>
+        </div>
+
+        <div class="contact-grid">
+          <form class="contact-form" id="contactForm">
+            <div class="field-row">
+              <label class="field">
+                <span data-i18n="form.name">Full Name</span>
+                <input type="text" name="name" required />
+              </label>
+              <label class="field">
+                <span data-i18n="form.email">Email</span>
+                <input type="email" name="email" required />
+              </label>
+            </div>
+            <div class="field-row">
+              <label class="field">
+                <span data-i18n="form.dates">Travel Dates</span>
+                <input type="text" name="dates" placeholder="Jan 15 – Jan 22" />
+              </label>
+              <label class="field">
+                <span data-i18n="form.party">Party Size</span>
+                <input type="number" name="party" min="1" max="18" placeholder="4" />
+              </label>
+            </div>
+            <label class="field">
+              <span data-i18n="form.tour">Tour or Service</span>
+              <select name="tour">
+                <option data-i18n="form.opt0">Not sure yet, help me plan</option>
+                <option data-i18n="form.opt1">Arenal Volcano</option>
+                <option data-i18n="form.opt2">Manuel Antonio</option>
+                <option data-i18n="form.opt3">Monteverde Cloud Forest</option>
+                <option data-i18n="form.opt4">Rincón de la Vieja</option>
+                <option data-i18n="form.opt5">Beach Hopping</option>
+                <option data-i18n="form.opt6">Surf Experience</option>
+                <option data-i18n="form.opt7">Airport Transfer</option>
+                <option data-i18n="form.opt8">Custom Multi-Day</option>
+              </select>
+            </label>
+            <label class="field">
+              <span data-i18n="form.msg">Tell us about your trip</span>
+              <textarea name="message" rows="5" placeholder=""></textarea>
+            </label>
+            <button type="submit" class="btn btn-primary btn-lg btn-block" data-i18n="form.send">Send Message</button>
+            <p class="form-note" data-i18n="form.note">By sending you agree to be contacted by Green Route about your trip. We never share your information.</p>
+          </form>
+
+          <aside class="contact-side">
+            <div class="contact-card">
+              <h3 data-i18n="contact.directTitle">Reach Randall directly</h3>
+              <a href="https://wa.me/50688888888" class="contact-link contact-link-wa">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 14.4c-.3-.1-1.7-.8-2-.9-.3-.1-.5-.1-.7.1-.2.3-.8.9-.9 1.1-.2.2-.3.2-.6.1-.3-.1-1.2-.4-2.4-1.4-.9-.8-1.4-1.7-1.6-2-.2-.3 0-.4.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5 0-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4s-1 1-1 2.5 1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5 2.5 1 3 .8 3.6.8.5-.1 1.7-.7 2-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3z"/><path d="M12 1C6 1 1 6 1 12c0 2.1.6 4 1.7 5.7L1 23l5.5-1.7C8.1 22.4 10 23 12 23c6 0 11-5 11-11S18 1 12 1zm0 20c-1.8 0-3.5-.5-4.9-1.4l-.4-.2-3.3 1 1-3.2-.2-.4C3.5 15.5 3 13.8 3 12c0-5 4-9 9-9s9 4 9 9-4 9-9 9z"/></svg>
+                <div>
+                  <span class="link-label" data-i18n="contact.wa">WhatsApp</span>
+                  <span class="link-value">+506 8888-8888</span>
+                </div>
+              </a>
+              <a href="tel:+50688888888" class="contact-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.37 1.9.72 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0122 16.92z"/></svg>
+                <div>
+                  <span class="link-label" data-i18n="contact.phone">Phone</span>
+                  <span class="link-value">+506 8888-8888</span>
+                </div>
+              </a>
+              <a href="mailto:hello@greenroutecr.com" class="contact-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 6l-10 7L2 6"/></svg>
+                <div>
+                  <span class="link-label" data-i18n="contact.email">Email</span>
+                  <span class="link-value">hello@greenroutecr.com</span>
+                </div>
+              </a>
+              <div class="contact-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                <div>
+                  <span class="link-label" data-i18n="contact.based">Based in</span>
+                  <span class="link-value">Tamarindo, Guanacaste, Costa Rica</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="contact-card contact-card-accent">
+              <h3 data-i18n="contact.quickTitle">Quick response promise</h3>
+              <p data-i18n="contact.quickBody">Most messages get a personal reply from Randall within 4 hours during business hours. WhatsApp is the fastest way to reach him.</p>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============== FOOTER ============== -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="#top" class="brand brand-light">
+            <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true">
+              <circle cx="50" cy="50" r="48" fill="#F5EFE0" />
+              <path d="M20 65 Q 35 40 50 55 Q 65 70 80 45" stroke="#D4A437" stroke-width="6" fill="none" stroke-linecap="round" />
+              <circle cx="50" cy="55" r="5" fill="#1F4D2C" />
+              <path d="M25 78 L 75 78" stroke="#1F4D2C" stroke-width="3" stroke-linecap="round" opacity="0.7" />
+            </svg>
+            <span class="brand-text">
+              <span class="brand-name">Green Route</span>
+              <span class="brand-tag">Costa Rica</span>
+            </span>
+          </a>
+          <p data-i18n="footer.tag">Private tours and transportation, led by Randall Zuñiga. Trusted by the tourism industry for over 30 years.</p>
+        </div>
+
+        <div class="footer-col">
+          <h4 data-i18n="footer.exploreTitle">Explore</h4>
+          <a href="#tours" data-i18n="nav.tours">Tours</a>
+          <a href="#about" data-i18n="nav.about">About</a>
+          <a href="#reviews" data-i18n="nav.reviews">Reviews</a>
+          <a href="#contact" data-i18n="nav.contact">Contact</a>
+        </div>
+
+        <div class="footer-col">
+          <h4 data-i18n="footer.toursTitle">Top Tours</h4>
+          <a href="#tours" data-i18n="tour1.title">Arenal Volcano Adventure</a>
+          <a href="#tours" data-i18n="tour2.title">Manuel Antonio National Park</a>
+          <a href="#tours" data-i18n="tour3.title">Monteverde Cloud Forest</a>
+          <a href="#tours" data-i18n="tour7.title">Private Airport Transfer</a>
+        </div>
+
+        <div class="footer-col">
+          <h4 data-i18n="footer.contactTitle">Contact</h4>
+          <a href="https://wa.me/50688888888">WhatsApp +506 8888-8888</a>
+          <a href="mailto:hello@greenroutecr.com">hello@greenroutecr.com</a>
+          <span data-i18n="contact.basedShort">Tamarindo, Guanacaste</span>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>&copy; <span id="copyrightYear">2026</span> Green Route Costa Rica. <span data-i18n="footer.rights">All rights reserved.</span></p>
+        <p class="footer-legal">
+          <a href="#" data-i18n="footer.privacy">Privacy Policy</a>
+          <span class="dot">·</span>
+          <a href="#" data-i18n="footer.terms">Terms of Service</a>
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Floating WhatsApp -->
+  <a href="https://wa.me/50688888888" class="whatsapp-fab" aria-label="Chat on WhatsApp">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 14.4c-.3-.1-1.7-.8-2-.9-.3-.1-.5-.1-.7.1-.2.3-.8.9-.9 1.1-.2.2-.3.2-.6.1-.3-.1-1.2-.4-2.4-1.4-.9-.8-1.4-1.7-1.6-2-.2-.3 0-.4.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5 0-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4s-1 1-1 2.5 1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5 2.5 1 3 .8 3.6.8.5-.1 1.7-.7 2-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3z"/><path d="M12 1C6 1 1 6 1 12c0 2.1.6 4 1.7 5.7L1 23l5.5-1.7C8.1 22.4 10 23 12 23c6 0 11-5 11-11S18 1 12 1zm0 20c-1.8 0-3.5-.5-4.9-1.4l-.4-.2-3.3 1 1-3.2-.2-.4C3.5 15.5 3 13.8 3 12c0-5 4-9 9-9s9 4 9 9-4 9-9 9z"/></svg>
+  </a>
+
+  <script src="js/translations.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
